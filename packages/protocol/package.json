@@ -1,0 +1,42 @@
+{
+  "name": "@datamobile/protocol",
+  "version": "0.1.0",
+  "description": "Shared message types and helpers for the DataMobile SDK <-> Desktop WebSocket protocol.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "node -e \"require('fs').accessSync('dist/index.js')\""
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "MIT",
+  "author": "Italo Souza",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/italosouza/datamobile.git",
+    "directory": "packages/protocol"
+  },
+  "homepage": "https://github.com/italosouza/datamobile#readme",
+  "bugs": {
+    "url": "https://github.com/italosouza/datamobile/issues"
+  },
+  "keywords": ["datamobile", "react-native", "expo", "devtools", "protocol"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

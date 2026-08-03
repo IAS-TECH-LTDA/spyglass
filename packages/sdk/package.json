@@ -1,0 +1,167 @@
+{
+  "name": "@datamobile/sdk",
+  "version": "0.1.0",
+  "description": "Instrumentation SDK for React Native and web apps. Streams navigation, state and storage events to the DataMobile desktop inspector.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./navigation": {
+      "types": "./dist/navigation/index.d.ts",
+      "default": "./dist/navigation/index.js"
+    },
+    "./navigation/react-router": {
+      "types": "./dist/navigation/reactRouter.d.ts",
+      "default": "./dist/navigation/reactRouter.js"
+    },
+    "./state/redux": {
+      "types": "./dist/state/redux.d.ts",
+      "default": "./dist/state/redux.js"
+    },
+    "./state/zustand": {
+      "types": "./dist/state/zustand.d.ts",
+      "default": "./dist/state/zustand.js"
+    },
+    "./state/jotai": {
+      "types": "./dist/state/jotai.d.ts",
+      "default": "./dist/state/jotai.js"
+    },
+    "./state/recoil": {
+      "types": "./dist/state/recoil.d.ts",
+      "default": "./dist/state/recoil.js"
+    },
+    "./state/mobx": {
+      "types": "./dist/state/mobx.d.ts",
+      "default": "./dist/state/mobx.js"
+    },
+    "./storage/async-storage": {
+      "types": "./dist/storage/asyncStorage.d.ts",
+      "default": "./dist/storage/asyncStorage.js"
+    },
+    "./storage/mmkv": {
+      "types": "./dist/storage/mmkv.d.ts",
+      "default": "./dist/storage/mmkv.js"
+    },
+    "./storage/sqlite": {
+      "types": "./dist/storage/sqlite.d.ts",
+      "default": "./dist/storage/sqlite.js"
+    },
+    "./storage/realm": {
+      "types": "./dist/storage/realm.d.ts",
+      "default": "./dist/storage/realm.js"
+    },
+    "./storage/watermelondb": {
+      "types": "./dist/storage/watermelondb.d.ts",
+      "default": "./dist/storage/watermelondb.js"
+    },
+    "./storage/web-storage": {
+      "types": "./dist/storage/webStorage.d.ts",
+      "default": "./dist/storage/webStorage.js"
+    },
+    "./query/react-query": {
+      "types": "./dist/query/reactQuery.d.ts",
+      "default": "./dist/query/reactQuery.js"
+    },
+    "./console": {
+      "types": "./dist/console.d.ts",
+      "default": "./dist/console.js"
+    },
+    "./network": {
+      "types": "./dist/network.d.ts",
+      "default": "./dist/network.js"
+    },
+    "./performance": {
+      "types": "./dist/performance.d.ts",
+      "default": "./dist/performance.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "node -e \"require('fs').accessSync('dist/index.js')\""
+  },
+  "dependencies": {
+    "@datamobile/protocol": "workspace:^"
+  },
+  "peerDependencies": {
+    "@react-navigation/native": ">=6",
+    "react": ">=18",
+    "react-native": ">=0.70",
+    "expo-constants": ">=14",
+    "redux": ">=4",
+    "zustand": ">=4",
+    "jotai": ">=2",
+    "recoil": ">=0.7",
+    "mobx": ">=6",
+    "@react-native-async-storage/async-storage": ">=1",
+    "react-native-mmkv": ">=2",
+    "realm": ">=11",
+    "@nozbe/watermelondb": ">=0.27",
+    "react-router-dom": ">=6",
+    "@tanstack/react-query": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "react-native": { "optional": true },
+    "expo-constants": { "optional": true },
+    "@react-navigation/native": { "optional": true },
+    "redux": { "optional": true },
+    "zustand": { "optional": true },
+    "jotai": { "optional": true },
+    "recoil": { "optional": true },
+    "mobx": { "optional": true },
+    "@react-native-async-storage/async-storage": { "optional": true },
+    "react-native-mmkv": { "optional": true },
+    "realm": { "optional": true },
+    "@nozbe/watermelondb": { "optional": true },
+    "react-router-dom": { "optional": true },
+    "@tanstack/react-query": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "react": "^18.3.0",
+    "@types/react": "^18.3.0"
+  },
+  "license": "MIT",
+  "author": "Italo Souza",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/italosouza/datamobile.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/italosouza/datamobile#readme",
+  "bugs": {
+    "url": "https://github.com/italosouza/datamobile/issues"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "react",
+    "devtools",
+    "debugger",
+    "inspector",
+    "reactotron",
+    "redux",
+    "zustand",
+    "jotai",
+    "mobx",
+    "recoil",
+    "async-storage",
+    "mmkv",
+    "realm",
+    "watermelondb",
+    "react-query",
+    "websocket"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

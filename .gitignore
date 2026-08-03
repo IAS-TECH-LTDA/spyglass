@@ -1,0 +1,31 @@
+node_modules/
+dist/
+dist-ssr/
+.pnpm-store/
+*.local
+*.tsbuildinfo
+
+# Rust / Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Expo
+.expo/
+.expo-shared/
+examples/*/ios/
+examples/*/android/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editors / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Env
+.env
+.env.local

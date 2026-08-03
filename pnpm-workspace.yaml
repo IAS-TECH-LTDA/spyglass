@@ -1,0 +1,18 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+  - "examples/*"
+
+# The SDK declares RN libraries (redux, zustand, realm, etc.) as *optional*
+# peerDependencies purely for TypeScript consumers' benefit — adapters reach
+# them via dynamic import, never a static one. Auto-installing peers would
+# pull heavy native modules (e.g. realm's prebuilt binaries) into this
+# monorepo's own node_modules for no reason; the example app installs what
+# it actually uses.
+autoInstallPeers: false
+
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@vitejs/plugin-react@6.0.4'

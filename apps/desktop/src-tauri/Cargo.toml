@@ -1,0 +1,24 @@
+[package]
+name = "datamobile-desktop"
+version = "0.1.0"
+description = "DataMobile — visual real-time inspector for React Native apps"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time", "macros", "process"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+if-addrs = "0.13"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
