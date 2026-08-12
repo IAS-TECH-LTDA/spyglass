@@ -12,7 +12,7 @@ export function StoresView({ appId }: { appId: string }) {
       <div className="view-empty">
         <p>
           No state store connected yet. Attach a state adapter, e.g.{" "}
-          <code>createDataMobileReduxMiddleware()</code> from <code>@datamobile/sdk/state/redux</code>.
+          <code>createSpyglassReduxMiddleware()</code> from <code>spyglass-react/state/redux</code>.
         </p>
       </div>
     );

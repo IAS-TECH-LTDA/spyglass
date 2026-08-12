@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { NavStatePayload, NavTransitionPayload } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { NavStatePayload, NavTransitionPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /**
  * React Router has no external "ref" the way React Navigation does — the
  * current location only exists inside React, via `useLocation()` — so this
  * adapter is a hook mounted once near your app root, same pattern as
- * `useDataMobileRecoil`.
+ * `useSpyglassRecoil`.
  *
  * v1 is deliberately simple: one flat route per URL (`name` = pathname,
  * `params` = parsed query string), not the nested route-match tree from
@@ -18,7 +18,7 @@ import { getCore } from "../core.js";
  *
  * ```tsx
  * function RouterInspectorBridge() {
- *   useDataMobileReactRouter();
+ *   useSpyglassReactRouter();
  *   return null;
  * }
  *
@@ -28,7 +28,7 @@ import { getCore } from "../core.js";
  * </BrowserRouter>
  * ```
  */
-export function useDataMobileReactRouter(): void {
+export function useSpyglassReactRouter(): void {
   const core = getCore();
   const location = useLocation();
   const lastRoute = useRef<{ key: string; name: string } | undefined>(undefined);

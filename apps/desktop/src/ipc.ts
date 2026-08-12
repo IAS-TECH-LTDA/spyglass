@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import type { AnyEnvelope } from "@datamobile/protocol";
+import type { AnyEnvelope } from "spyglass-protocol";
 
 /** Mirrors the Rust `AppInfo` struct (src-tauri/src/registry.rs), serde(rename_all = "camelCase"). */
 export interface AppInfo {

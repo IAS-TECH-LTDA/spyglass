@@ -1,10 +1,10 @@
-# @datamobile/protocol
+# spyglass-protocol
 
-Shared message types and helpers for the [DataMobile](https://github.com/italosouza/datamobile)
+Shared message types and helpers for the [Spyglass](https://github.com/italosouza/spyglass)
 SDK↔Desktop WebSocket protocol.
 
 You probably don't need this package directly — it's a dependency of
-[`@datamobile/sdk`](https://www.npmjs.com/package/@datamobile/sdk), which
+[`spyglass-react`](https://www.npmjs.com/package/spyglass-react), which
 re-exports the pieces most consumers need (`Platform`, `Framework`,
 `Capability`, etc.) from its own entry point. Install it explicitly only if
 you're building a second client or server that speaks the same protocol.
@@ -30,7 +30,7 @@ and the desktop app's webview (browser runtime).
 
 The desktop app's Rust side hand-mirrors these types (`serde(rename_all =
 "camelCase")`) — a shape change here needs a matching Rust edit in the
-desktop app's `registry.rs`. `@datamobile/sdk` depends on this package via
+desktop app's `registry.rs`. `spyglass-react` depends on this package via
 `workspace:^` in this monorepo, which resolves to a real semver range
 (`^<version>`) once published.
 

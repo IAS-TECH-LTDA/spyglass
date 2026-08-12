@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { StorageEngine } from "@datamobile/protocol";
+import type { StorageEngine } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
 import { JsonTree } from "../../components/JsonTree";
 import { CopyButton } from "../../components/CopyButton";
@@ -36,7 +36,7 @@ export function StorageView({ appId }: { appId: string }) {
       <div className="view-empty">
         <p>
           No storage engine connected yet. Attach a storage adapter, e.g. <code>attachAsyncStorage(AsyncStorage)</code>{" "}
-          from <code>@datamobile/sdk/storage/async-storage</code>.
+          from <code>spyglass-react/storage/async-storage</code>.
         </p>
       </div>
     );
@@ -119,7 +119,7 @@ function RelationalStorage({
   schema,
   rows,
 }: {
-  schema: import("@datamobile/protocol").TableSchema[];
+  schema: import("spyglass-protocol").TableSchema[];
   rows: Record<string, unknown[]>;
 }) {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);

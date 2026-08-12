@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { StorageSnapshotPayload, TableSchema } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** Structural subset of a WatermelonDB `Model` instance. */
@@ -45,7 +45,7 @@ export interface WatermelonAdapterOptions {
  *
  * ```ts
  * import { database } from "./database";
- * import { attachWatermelonDB } from "@datamobile/sdk/storage/watermelondb";
+ * import { attachWatermelonDB } from "spyglass-react/storage/watermelondb";
  *
  * attachWatermelonDB(database);
  * ```

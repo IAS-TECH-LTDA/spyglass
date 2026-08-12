@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { DataMobileNavState, DataMobileRoute, NavTransitionPayload } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { SpyglassNavState, SpyglassRoute, NavTransitionPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /**
@@ -21,7 +21,7 @@ export interface NavigationContainerRefLike {
  * Shape of React Navigation's internal state tree (stack/tab/drawer,
  * nested). `index` is optional to match React Navigation's `PartialState`
  * (nested navigators can report a not-yet-resolved state before their first
- * render); `toDataMobileNavState` below defaults it to `0`.
+ * render); `toSpyglassNavState` below defaults it to `0`.
  */
 interface RNNavState {
   index?: number;
@@ -31,7 +31,7 @@ interface RNNavState {
 
 /**
  * `key`/`name` are optional to match React Navigation's `PartialRoute`
- * (used for not-yet-resolved nested navigator state) — `toDataMobileRoute`
+ * (used for not-yet-resolved nested navigator state) — `toSpyglassRoute`
  * below fills in placeholders when they're missing.
  */
 interface RNNavRoute {
@@ -75,7 +75,7 @@ export function attachNavigation(
     const rootState = ref.getRootState();
     if (!rootState) return;
 
-    const state = toDataMobileNavState(rootState);
+    const state = toSpyglassNavState(rootState);
     const activeRoute = ref.getCurrentRoute();
     core.transport.send(
       createEnvelope("nav/state", core.appId, {
@@ -111,19 +111,19 @@ export function attachNavigation(
   return unsubscribe;
 }
 
-function toDataMobileNavState(state: RNNavState): DataMobileNavState {
+function toSpyglassNavState(state: RNNavState): SpyglassNavState {
   return {
     index: state.index ?? 0,
     routeNames: state.routeNames,
-    routes: state.routes.map(toDataMobileRoute),
+    routes: state.routes.map(toSpyglassRoute),
   };
 }
 
-function toDataMobileRoute(route: RNNavRoute): DataMobileRoute {
+function toSpyglassRoute(route: RNNavRoute): SpyglassRoute {
   return {
     key: route.key ?? "unknown",
     name: route.name ?? "Unknown",
     params: route.params ? (safeSerialize(route.params) as Record<string, unknown>) : undefined,
-    state: route.state ? toDataMobileNavState(route.state) : undefined,
+    state: route.state ? toSpyglassNavState(route.state) : undefined,
   };
 }

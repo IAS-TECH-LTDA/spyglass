@@ -1,7 +1,7 @@
 {
-  "name": "@datamobile/protocol",
+  "name": "spyglass-protocol",
   "version": "0.1.0",
-  "description": "Shared message types and helpers for the DataMobile SDK <-> Desktop WebSocket protocol.",
+  "description": "Shared message types and helpers for the Spyglass SDK <-> Desktop WebSocket protocol.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,14 +28,14 @@
   "author": "Italo Souza",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/italosouza/datamobile.git",
+    "url": "git+https://github.com/italosouza/spyglass.git",
     "directory": "packages/protocol"
   },
-  "homepage": "https://github.com/italosouza/datamobile#readme",
+  "homepage": "https://github.com/italosouza/spyglass#readme",
   "bugs": {
-    "url": "https://github.com/italosouza/datamobile/issues"
+    "url": "https://github.com/italosouza/spyglass/issues"
   },
-  "keywords": ["datamobile", "react-native", "expo", "devtools", "protocol"],
+  "keywords": ["spyglass", "react-native", "expo", "devtools", "protocol"],
   "publishConfig": {
     "access": "public"
   }

@@ -1,5 +1,5 @@
-import { createEnvelope, diffValues, hashValue, safeSerialize } from "@datamobile/protocol";
-import type { StateActionPayload, StateInitPayload } from "@datamobile/protocol";
+import { createEnvelope, diffValues, hashValue, safeSerialize } from "spyglass-protocol";
+import type { StateActionPayload, StateInitPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** Structural subset of `mobx`'s `spy()` event shape we care about. */
@@ -28,7 +28,7 @@ export interface MobxAdapterOptions {
  *
  * ```ts
  * import * as mobx from "mobx";
- * import { attachMobx } from "@datamobile/sdk/state/mobx";
+ * import { attachMobx } from "spyglass-react/state/mobx";
  *
  * export const store = new RootStore();
  * attachMobx(mobx, () => store, { label: "RootStore" });

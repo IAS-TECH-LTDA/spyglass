@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { StorageSnapshotPayload, TableSchema } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /**

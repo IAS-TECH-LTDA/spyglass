@@ -6,7 +6,7 @@
 
 ## Contexto e problema
 
-O DataMobile se posiciona como inspetor para apps Expo, React Native
+O Spyglass se posiciona como inspetor para apps Expo, React Native
 (bare) e ReactJS, mas hoje o SDK não distingue de fato essas três
 situações. `detectPlatform()` (`packages/sdk/src/index.ts:115-129`) só
 resolve `platform: "ios" | "android" | "web"` tentando `import("react-native")`

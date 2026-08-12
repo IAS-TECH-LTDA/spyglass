@@ -4,10 +4,10 @@ use tokio::net::{TcpListener, TcpStream};
 
 use crate::registry::{Envelope, Registry};
 
-/// Mirrors `@datamobile/protocol`'s `DEFAULT_PORT` — see that constant's
+/// Mirrors `spyglass-protocol`'s `DEFAULT_PORT` — see that constant's
 /// comment for why it's not 8097 (React DevTools' own default).
 pub const PORT: u16 = 8098;
-/// 3x the SDK's `HEARTBEAT_INTERVAL_MS` (see `@datamobile/protocol/constants`).
+/// 3x the SDK's `HEARTBEAT_INTERVAL_MS` (see `spyglass-protocol/constants`).
 const HEARTBEAT_TIMEOUT_MS: u64 = 15_000;
 
 /// Binds the WebSocket server and accepts connections until the process
@@ -18,11 +18,11 @@ pub async fn run(app_handle: AppHandle, registry: Registry) {
     let listener = match TcpListener::bind(&addr).await {
         Ok(listener) => listener,
         Err(err) => {
-            eprintln!("[DataMobile] failed to bind {addr}: {err}");
+            eprintln!("[Spyglass] failed to bind {addr}: {err}");
             return;
         }
     };
-    println!("[DataMobile] WebSocket server listening on ws://{addr}");
+    println!("[Spyglass] WebSocket server listening on ws://{addr}");
 
     tauri::async_runtime::spawn(heartbeat_sweeper(app_handle.clone(), registry.clone()));
 
@@ -30,7 +30,7 @@ pub async fn run(app_handle: AppHandle, registry: Registry) {
         let (stream, _) = match listener.accept().await {
             Ok(conn) => conn,
             Err(err) => {
-                eprintln!("[DataMobile] accept error: {err}");
+                eprintln!("[Spyglass] accept error: {err}");
                 continue;
             }
         };

@@ -20,7 +20,7 @@ pub struct AppInfo {
     pub connected: bool,
 }
 
-/// Loose mirror of `@datamobile/protocol`'s `Envelope<T>`. `payload` is kept
+/// Loose mirror of `spyglass-protocol`'s `Envelope<T>`. `payload` is kept
 /// as an untyped `serde_json::Value` on purpose: the desktop server never
 /// needs to know the shape of every payload variant (only `hello` is
 /// inspected), it just timestamps, caches and forwards the rest to the

@@ -20,7 +20,7 @@ export function PerformanceView({ appId }: { appId: string }) {
       <div className="view-empty">
         <p>
           No performance data yet. Attach <code>attachPerformance()</code> from{" "}
-          <code>@datamobile/sdk/performance</code>.
+          <code>spyglass-react/performance</code>.
         </p>
       </div>
     );

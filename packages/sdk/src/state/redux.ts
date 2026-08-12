@@ -1,5 +1,5 @@
-import { createEnvelope, diffValues, hashValue, safeSerialize } from "@datamobile/protocol";
-import type { StateActionPayload, StateInitPayload } from "@datamobile/protocol";
+import { createEnvelope, diffValues, hashValue, safeSerialize } from "spyglass-protocol";
+import type { StateActionPayload, StateInitPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /**
@@ -27,15 +27,15 @@ export interface ReduxAdapterOptions {
  *
  * ```ts
  * import { configureStore } from "@reduxjs/toolkit";
- * import { createDataMobileReduxMiddleware } from "@datamobile/sdk/state/redux";
+ * import { createSpyglassReduxMiddleware } from "spyglass-react/state/redux";
  *
  * const store = configureStore({
  *   reducer: rootReducer,
- *   middleware: (getDefault) => getDefault().concat(createDataMobileReduxMiddleware()),
+ *   middleware: (getDefault) => getDefault().concat(createSpyglassReduxMiddleware()),
  * });
  * ```
  */
-export function createDataMobileReduxMiddleware<S = unknown>(
+export function createSpyglassReduxMiddleware<S = unknown>(
   options: ReduxAdapterOptions = {},
 ): Middleware<S> {
   const core = getCore();

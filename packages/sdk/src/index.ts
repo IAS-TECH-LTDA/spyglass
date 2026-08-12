@@ -1,7 +1,12 @@
-import { createEnvelope, DEFAULT_HOST, DEFAULT_PORT, HEARTBEAT_INTERVAL_MS } from "@datamobile/protocol";
-import type { Capability, Framework, HelloPayload, Platform } from "@datamobile/protocol";
+import { createEnvelope, DEFAULT_HOST, DEFAULT_PORT, HEARTBEAT_INTERVAL_MS } from "spyglass-protocol";
+import type { Capability, Framework, HelloPayload, Platform } from "spyglass-protocol";
+import { attachConsole } from "./console.js";
 import { setCore } from "./core.js";
 import { createDiagnostics } from "./diagnostics.js";
+import { isDevEnvironment } from "./env.js";
+import { attachNetwork } from "./network.js";
+import { attachPerformance } from "./performance.js";
+import { loadPlatform } from "./reactNative.js";
 import { createDevHostResolver, warmDevHost } from "./transport/devHost.js";
 import { Transport } from "./transport/ws.js";
 
@@ -12,6 +17,13 @@ import { Transport } from "./transport/ws.js";
  * instead of silently shipping a stale version string).
  */
 export const SDK_VERSION = "0.1.0";
+
+export interface AutoAttachOptions {
+  /** Defaults to the same dev-environment detection as `InitOptions.diagnostics`. */
+  console?: boolean;
+  network?: boolean;
+  performance?: boolean;
+}
 
 export interface InitOptions {
   /** Shown in the desktop app's connected-apps list. */
@@ -54,9 +66,22 @@ export interface InitOptions {
    * dev, or `true` to force it on.
    */
   diagnostics?: boolean;
+  /**
+   * Auto-attaches `attachConsole()`/`attachNetwork()`/`attachPerformance()`
+   * — no adapter call needed. These three (unlike navigation, state and
+   * storage adapters) don't need any app-specific reference, so there's
+   * nothing for you to hand over; this defaults to on in dev-style
+   * environments and off in production, same detection as `diagnostics`.
+   * Pass `false` to disable entirely, `true` to force all three on even in
+   * production, or an object to override per capability (e.g.
+   * `{ network: false }` keeps console+performance on but skips network).
+   * Calling the adapter's own `attachX()` yourself afterwards is a safe
+   * no-op if `init()` already attached it — it won't double-report.
+   */
+  autoAttach?: boolean | AutoAttachOptions;
 }
 
-export interface DataMobileHandle {
+export interface SpyglassHandle {
   /** Underlying app id sent in every message — useful for debugging. */
   appId: string;
   /** Stops the heartbeat and closes the WebSocket connection. */
@@ -64,15 +89,15 @@ export interface DataMobileHandle {
 }
 
 /**
- * Boots the DataMobile SDK: opens the WebSocket connection to the desktop
+ * Boots the Spyglass SDK: opens the WebSocket connection to the desktop
  * inspector and sends the `hello` handshake once connected. Call this once,
  * as early as possible (e.g. top of `App.tsx`), then attach whichever
  * adapters your app uses:
  *
  * ```ts
- * import { init } from "@datamobile/sdk";
- * import { attachNavigation } from "@datamobile/sdk/navigation";
- * import { dataMobileReduxEnhancer } from "@datamobile/sdk/state/redux";
+ * import { init } from "spyglass-react";
+ * import { attachNavigation } from "spyglass-react/navigation";
+ * import { spyglassReduxEnhancer } from "spyglass-react/state/redux";
  *
  * init({ appName: "MyApp" });
  * ```
@@ -80,10 +105,11 @@ export interface DataMobileHandle {
  * No-ops safely in production-style environments with no reachable desktop:
  * the transport just keeps retrying in the background with backoff.
  */
-export function init(options: InitOptions): DataMobileHandle {
+export function init(options: InitOptions): SpyglassHandle {
   const appId = generateAppId();
   const port = options.port ?? DEFAULT_PORT;
   const capabilities = new Set<Capability>();
+  const attachedAdapters = new Set<Capability>();
 
   const resolver = createDevHostResolver(options.host);
   const diagnostics = createDiagnostics(options.diagnostics === undefined ? undefined : { enabled: options.diagnostics });
@@ -111,7 +137,27 @@ export function init(options: InitOptions): DataMobileHandle {
     transport,
     appId,
     registerCapability: (capability) => capabilities.add(capability),
+    markAttached: (capability) => {
+      if (attachedAdapters.has(capability)) return false;
+      attachedAdapters.add(capability);
+      return true;
+    },
   });
+
+  // Console/network/performance need no app-specific reference (unlike
+  // navigation/state/storage adapters), so there's nothing stopping `init()`
+  // from attaching them itself — dev-only by default, matching `diagnostics`.
+  const autoAttachDevDefault = isDevEnvironment();
+  const detachAutoAttached: Array<() => void> = [];
+  if (resolveAutoAttach("console", options.autoAttach, autoAttachDevDefault)) {
+    detachAutoAttached.push(attachConsole());
+  }
+  if (resolveAutoAttach("network", options.autoAttach, autoAttachDevDefault)) {
+    detachAutoAttached.push(attachNetwork());
+  }
+  if (resolveAutoAttach("performance", options.autoAttach, autoAttachDevDefault)) {
+    detachAutoAttached.push(attachPerformance());
+  }
 
   transport.onOpen(() => {
     resolver.pin();
@@ -143,10 +189,26 @@ export function init(options: InitOptions): DataMobileHandle {
     appId,
     close() {
       clearInterval(heartbeat);
+      for (const detach of detachAutoAttached) detach();
       transport.close();
       setCore(null);
     },
   };
+}
+
+/**
+ * A blanket `true`/`false` for `autoAttach` applies to every capability
+ * uniformly. An object overrides per capability, falling back to the
+ * dev-environment default for any key it doesn't mention.
+ */
+function resolveAutoAttach(
+  key: keyof AutoAttachOptions,
+  option: boolean | AutoAttachOptions | undefined,
+  devDefault: boolean,
+): boolean {
+  if (typeof option === "boolean") return option;
+  const perCapability = option?.[key];
+  return perCapability ?? devDefault;
 }
 
 function generateAppId(): string {
@@ -180,15 +242,11 @@ let cachedPlatform: Platform | undefined;
 
 export async function detectPlatform(): Promise<Platform> {
   if (cachedPlatform) return cachedPlatform;
-  try {
-    const rn = (await import("react-native")) as { Platform?: { OS?: string } };
-    const os = rn.Platform?.OS;
-    if (os === "ios" || os === "android") {
-      cachedPlatform = os;
-      return os;
-    }
-  } catch {
-    // Not running inside a React Native runtime (e.g. Node/tests) — fall through.
+  const platform = await loadPlatform();
+  const os = platform?.OS;
+  if (os === "ios" || os === "android") {
+    cachedPlatform = os;
+    return os;
   }
   cachedPlatform = "web";
   return cachedPlatform;
@@ -231,7 +289,7 @@ export async function detectFramework(): Promise<Framework> {
 }
 
 export { getCore, hasCore } from "./core.js";
-export type { DataMobileCore } from "./core.js";
+export type { SpyglassCore } from "./core.js";
 export { Transport } from "./transport/ws.js";
 export type { TransportDiagnostic, TransportOptions, WebSocketLike } from "./transport/ws.js";
 export { createDevHostResolver, getDevHostCandidates, parseDevServerHost, warmDevHost } from "./transport/devHost.js";

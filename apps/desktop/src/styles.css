@@ -1715,3 +1715,188 @@ th {
   border: 1px solid var(--border);
   border-radius: 5px;
 }
+
+/* Alerts */
+
+.alerts-anchor {
+  position: relative;
+  margin-left: auto;
+}
+
+.alerts-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 300px;
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.alerts-popover-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.alerts-popover-section > span:first-child {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.alerts-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.alerts-app-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.alerts-retry-btn {
+  display: inline;
+  padding: 0 4px;
+  text-decoration: underline;
+}
+
+.alert-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #1a0d0d;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-badge {
+  margin-left: 4px;
+}
+
+/*
+ * Launch splash — see components/SplashScreen.tsx for the show/hide timing.
+ * Background is #060A1C, not --bg (#0F1115) — sampled directly from
+ * emblem.png's own corner pixels (it has its own solid backdrop baked in,
+ * from the source screenshot). Matching that exact tone, rather than the
+ * app's background token, is what makes the square image edge disappear
+ * behind the circular rings instead of showing a seam.
+ */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #060a1c;
+  opacity: 1;
+  transition: opacity var(--splash-fade-ms, 400ms) ease-out;
+}
+
+.splash-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-emblem {
+  position: relative;
+  width: 220px;
+  height: 220px;
+}
+
+/*
+ * Each ring is the *same* full emblem.png, clipped to a different circle
+ * and rotated independently — see the doc comment in SplashScreen.tsx for
+ * why (no layered source art, no vectorizer available to split it). Later
+ * elements paint over earlier ones, so the DOM order (outer, mid, inner)
+ * has to match clip radius large-to-small for each band to actually show
+ * only its own layer.
+ */
+.splash-ring {
+  position: absolute;
+  inset: 0;
+  background-image: url("/emblem.png");
+  background-size: 100% 100%;
+  background-position: center;
+  border-radius: 50%;
+}
+
+.splash-ring-outer {
+  clip-path: circle(48% at 50% 50%);
+  animation: splash-spin-cw 16s linear infinite;
+}
+
+.splash-ring-mid {
+  clip-path: circle(34% at 50% 50%);
+  animation: splash-spin-ccw 11s linear infinite;
+}
+
+.splash-ring-inner {
+  clip-path: circle(27% at 50% 50%);
+  animation: splash-focus-settle 2.4s ease-in-out infinite;
+}
+
+@keyframes splash-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes splash-spin-ccw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+/* A damped over/undershoot, like a lens settling on focus rather than spinning. */
+@keyframes splash-focus-settle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(14deg);
+  }
+  50% {
+    transform: rotate(-6deg);
+  }
+  75% {
+    transform: rotate(3deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-ring-outer,
+  .splash-ring-mid,
+  .splash-ring-inner {
+    animation: none;
+  }
+}

@@ -43,6 +43,23 @@ function walk(value: unknown, seen: WeakSet<object>, depth: number): unknown {
     return value.toISOString();
   }
 
+  if (value instanceof Error) {
+    // `name`/`message`/`stack` are non-enumerable per spec, so the generic
+    // "walk own enumerable keys" branch below sees none of them and would
+    // serialize any Error to `{}` — silently dropping exactly the
+    // information logging an error exists to show. Pull them out
+    // explicitly, then still walk whatever *extra* own-enumerable
+    // properties the error has (native bridge errors, DOMException-likes,
+    // and custom Error subclasses often attach their own, e.g. `code`).
+    seen.add(value);
+    const out: Record<string, unknown> = { name: value.name, message: value.message, stack: value.stack };
+    for (const key of Object.keys(value)) {
+      if (key in out) continue;
+      out[key] = walk((value as unknown as Record<string, unknown>)[key], seen, depth + 1);
+    }
+    return out;
+  }
+
   // Plain object (or class instance) — walk own enumerable keys.
   seen.add(value as object);
   const out: Record<string, unknown> = {};
@@ -75,7 +92,7 @@ function truncated(
   originalSize?: number,
 ): TruncatedValue {
   return {
-    __datamobile_truncated: true,
+    __spyglass_truncated: true,
     originalType,
     preview: preview ?? describeShape(original),
     originalSize,

@@ -1,5 +1,5 @@
-import { createEnvelope, diffValues, hashValue, safeSerialize } from "@datamobile/protocol";
-import type { StateActionPayload, StateInitPayload } from "@datamobile/protocol";
+import { createEnvelope, diffValues, hashValue, safeSerialize } from "spyglass-protocol";
+import type { StateActionPayload, StateInitPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /**
@@ -27,15 +27,15 @@ export interface ZustandAdapterOptions {
  *
  * ```ts
  * import { create } from "zustand";
- * import { withDataMobile } from "@datamobile/sdk/state/zustand";
+ * import { withSpyglass } from "spyglass-react/state/zustand";
  *
- * const useStore = create(withDataMobile((set, get) => ({
+ * const useStore = create(withSpyglass((set, get) => ({
  *   count: 0,
  *   increment: () => set((s) => ({ count: s.count + 1 })),
  * })));
  * ```
  */
-export function withDataMobile<T extends object>(
+export function withSpyglass<T extends object>(
   config: StateCreatorLike<T>,
   options: ZustandAdapterOptions = {},
 ): StateCreatorLike<T> {

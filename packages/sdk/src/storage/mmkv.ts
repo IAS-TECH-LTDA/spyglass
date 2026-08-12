@@ -1,5 +1,5 @@
-import { createEnvelope } from "@datamobile/protocol";
-import type { KVEntry, StorageChangePayload, StorageSnapshotPayload } from "@datamobile/protocol";
+import { createEnvelope } from "spyglass-protocol";
+import type { KVEntry, StorageChangePayload, StorageSnapshotPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 import { parseMaybeJson } from "./shared.js";
 
@@ -26,7 +26,7 @@ export interface MmkvAdapterOptions {
  *
  * ```ts
  * import { MMKV } from "react-native-mmkv";
- * import { attachMmkv } from "@datamobile/sdk/storage/mmkv";
+ * import { attachMmkv } from "spyglass-react/storage/mmkv";
  *
  * export const storage = new MMKV();
  * attachMmkv(storage);

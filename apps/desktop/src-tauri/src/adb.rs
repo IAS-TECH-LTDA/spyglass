@@ -120,7 +120,7 @@ fn well_known_sdk_paths() -> Vec<PathBuf> {
 /// silently fail for most people running the bundled app, which is the
 /// worst possible failure mode for a feature meant to "just work".
 fn find_adb() -> Option<PathBuf> {
-    if let Ok(path) = env::var("DATAMOBILE_ADB_PATH") {
+    if let Ok(path) = env::var("SPYGLASS_ADB_PATH") {
         let path = PathBuf::from(path);
         if is_executable_file(&path) {
             return Some(path);
@@ -237,13 +237,13 @@ fn set_status(status: &AdbStatusHandle, app_handle: &AppHandle, next: AdbStatus)
 /// One discovery + list + reverse-apply cycle. Returns whether adb was
 /// found, so the caller can decide how long to wait before the next tick.
 async fn tick(status: &AdbStatusHandle, app_handle: &AppHandle) -> bool {
-    if env::var("DATAMOBILE_DISABLE_ADB").is_ok() {
+    if env::var("SPYGLASS_DISABLE_ADB").is_ok() {
         return set_status(
             status,
             app_handle,
             AdbStatus {
                 state: "unavailable".to_string(),
-                message: Some("Auto `adb reverse` disabled via DATAMOBILE_DISABLE_ADB.".to_string()),
+                message: Some("Auto `adb reverse` disabled via SPYGLASS_DISABLE_ADB.".to_string()),
                 ..AdbStatus::default()
             },
         );
@@ -256,8 +256,8 @@ async fn tick(status: &AdbStatusHandle, app_handle: &AppHandle) -> bool {
             AdbStatus {
                 state: "unavailable".to_string(),
                 message: Some(
-                    "adb not found — looked in $DATAMOBILE_ADB_PATH, $ANDROID_HOME, $ANDROID_SDK_ROOT, PATH, \
-                     and the default SDK install location. Set $DATAMOBILE_ADB_PATH or run \
+                    "adb not found — looked in $SPYGLASS_ADB_PATH, $ANDROID_HOME, $ANDROID_SDK_ROOT, PATH, \
+                     and the default SDK install location. Set $SPYGLASS_ADB_PATH or run \
                      `adb reverse tcp:8098 tcp:8098` yourself."
                         .to_string(),
                 ),

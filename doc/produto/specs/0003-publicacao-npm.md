@@ -6,7 +6,7 @@
 
 ## Contexto e problema
 
-Publicar `@datamobile/protocol` e `@datamobile/sdk` no npm hoje produziria
+Publicar `spyglass-protocol` e `spyglass-react` no npm hoje produziria
 pacotes **quebrados**: ambos são `"private": true` (bloqueia `npm publish`),
 o SDK depende do protocol via `"file:../protocol"` (vai verbatim no tarball
 e resolve para um caminho inexistente na máquina do consumidor), e — o mais
@@ -43,16 +43,16 @@ próprio IP de rede.
 
 ## Critérios de aceite
 
-- [ ] **CA1** — Dado o pacote `@datamobile/sdk` empacotado via `pnpm pack`,
+- [ ] **CA1** — Dado o pacote `spyglass-react` empacotado via `pnpm pack`,
       Quando inspeciono o tarball, Então `dist/` está presente com todos os
       18 subpaths de `exports` resolvendo para arquivos reais, e
       `dist/__tests__/` **não** está presente.
 - [ ] **CA2** — Dado o mesmo tarball, Quando leio seu `package.json`, Então
-      a dependência de `@datamobile/protocol` aparece como um range real
+      a dependência de `spyglass-protocol` aparece como um range real
       (ex.: `^0.1.0`), nunca como `workspace:^` nem `file:...`.
 - [ ] **CA3** — Dado os manifestos publicados, Quando um dev instala via
-      `npm install @datamobile/sdk`, Então a instalação resolve sem erro e
-      `import { init } from "@datamobile/sdk"` funciona.
+      `npm install spyglass-react`, Então a instalação resolve sem erro e
+      `import { init } from "spyglass-react"` funciona.
 - [ ] **CA4** — Dado nenhum app conectado no desktop, Quando abro a tela
       principal, Então vejo os IPs de LAN reais desta máquina (não
       `localhost` fixo), um snippet de `init()` por cenário (simulador,
@@ -125,7 +125,7 @@ próprio IP de rede.
 
 ## Métrica de sucesso
 
-Depois de publicado: `npm install @datamobile/sdk` num projeto limpo (fora
+Depois de publicado: `npm install spyglass-react` num projeto limpo (fora
 deste monorepo) instala e `init()` funciona sem erro — validado manualmente
 via `pnpm pack` + instalação num diretório temporário antes do publish real.
 E: um dev abrindo o desktop pela primeira vez sem app conectado consegue

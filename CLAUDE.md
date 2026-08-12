@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-DataMobile is a visual, real-time inspector for React Native apps: navigation, state management, local storage, console logs and network requests, viewed live in a desktop app. It's a pnpm workspace with three pieces that all talk over one wire protocol:
+Spyglass is a visual, real-time inspector for React Native apps: navigation, state management, local storage, console logs and network requests, viewed live in a desktop app. It's a pnpm workspace with three pieces that all talk over one wire protocol:
 
 - `packages/protocol` — dependency-free shared types/helpers for the SDK↔Desktop WebSocket protocol (source of truth; the Rust side is hand-mirrored from it).
-- `packages/sdk` (`@datamobile/sdk`) — instrumentation SDK embedded in the target React Native/web app. Opens a WebSocket to the desktop app and streams envelopes.
-- `apps/desktop` (`@datamobile/desktop`) — Tauri app (React/Vite frontend + Rust backend). The Rust side runs the WebSocket server and forwards events to the frontend via Tauri IPC.
+- `packages/sdk` (`spyglass-react`) — instrumentation SDK embedded in the target React Native/web app. Opens a WebSocket to the desktop app and streams envelopes.
+- `apps/desktop` (`spyglass-desktop`) — Tauri app (React/Vite frontend + Rust backend). The Rust side runs the WebSocket server and forwards events to the frontend via Tauri IPC.
 
 ## Commands
 
@@ -25,13 +25,13 @@ pnpm dev:desktop                               # launch the Tauri desktop app in
 Per-package, using pnpm's `--filter`:
 
 ```bash
-pnpm --filter @datamobile/protocol build       # must happen before sdk builds/typechecks —
-pnpm --filter @datamobile/sdk build            # sdk depends on protocol's *dist* output (workspace:^), not source
+pnpm --filter spyglass-protocol build       # must happen before sdk builds/typechecks —
+pnpm --filter spyglass-react build            # sdk depends on protocol's *dist* output (workspace:^), not source
 
-pnpm --filter @datamobile/sdk test             # vitest run
-pnpm --filter @datamobile/sdk test -- transport.test.ts   # single test file
-pnpm --filter @datamobile/protocol typecheck
-pnpm --filter @datamobile/desktop typecheck    # tsc -b (project references)
+pnpm --filter spyglass-react test             # vitest run
+pnpm --filter spyglass-react test -- transport.test.ts   # single test file
+pnpm --filter spyglass-protocol typecheck
+pnpm --filter spyglass-desktop typecheck    # tsc -b (project references)
 ```
 
 There is no linter wired up yet (`lint` at the root is a no-op — no package defines a `lint` script).
@@ -48,7 +48,7 @@ Both `packages/protocol` and `packages/sdk` are public npm packages (`apps/deskt
 pnpm release   # typecheck && test && build && publish -r --access public
 ```
 
-Before running it: bump the version in both `package.json`s to the same value (the protocol and SDK are meant to move in lockstep, since the Rust side hand-mirrors `packages/protocol`'s types) and in `SDK_VERSION` in `packages/sdk/src/index.ts` (`__tests__/version.test.ts` fails the build if these drift). `@datamobile/sdk`'s dependency on `@datamobile/protocol` is `workspace:^` — pnpm rewrites that to a real semver range (e.g. `^0.1.0`) only during `pnpm publish`/`pnpm pack`, never under plain `npm publish`. Verify a release before trusting it: `pnpm --filter @datamobile/sdk exec pnpm pack` and inspect the resulting tarball — it must contain `dist/` (not `dist/__tests__/`) and the dependency range must not read `workspace:^` verbatim.
+Before running it: bump the version in both `package.json`s to the same value (the protocol and SDK are meant to move in lockstep, since the Rust side hand-mirrors `packages/protocol`'s types) and in `SDK_VERSION` in `packages/sdk/src/index.ts` (`__tests__/version.test.ts` fails the build if these drift). `spyglass-react`'s dependency on `spyglass-protocol` is `workspace:^` — pnpm rewrites that to a real semver range (e.g. `^0.1.0`) only during `pnpm publish`/`pnpm pack`, never under plain `npm publish`. Verify a release before trusting it: `pnpm --filter spyglass-react exec pnpm pack` and inspect the resulting tarball — it must contain `dist/` (not `dist/__tests__/`) and the dependency range must not read `workspace:^` verbatim.
 
 ## Architecture
 

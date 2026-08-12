@@ -1,5 +1,5 @@
-import { createEnvelope, diffValues, hashValue, safeSerialize } from "@datamobile/protocol";
-import type { StateActionPayload, StateInitPayload } from "@datamobile/protocol";
+import { createEnvelope, diffValues, hashValue, safeSerialize } from "spyglass-protocol";
+import type { StateActionPayload, StateInitPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** Structural subset of Jotai's vanilla `Store` (from `createStore()` in `jotai/vanilla`). */
@@ -26,7 +26,7 @@ export interface JotaiAdapterOptions {
  *
  * ```ts
  * import { createStore } from "jotai/vanilla";
- * import { attachJotai } from "@datamobile/sdk/state/jotai";
+ * import { attachJotai } from "spyglass-react/state/jotai";
  *
  * export const store = createStore();
  * attachJotai(store, [

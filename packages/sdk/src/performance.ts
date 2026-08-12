@@ -1,5 +1,5 @@
-import { createEnvelope } from "@datamobile/protocol";
-import type { PerfSamplePayload, PerfStallPayload } from "@datamobile/protocol";
+import { createEnvelope } from "spyglass-protocol";
+import type { PerfSamplePayload, PerfStallPayload } from "spyglass-protocol";
 import { getCore } from "./core.js";
 
 export interface PerformanceAdapterOptions {
@@ -24,12 +24,15 @@ const DEFAULT_SAMPLE_WINDOW_MS = 2000;
  * wrap components in a `<Profiler>` or hook into React internals.
  *
  * ```ts
- * import { attachPerformance } from "@datamobile/sdk/performance";
+ * import { attachPerformance } from "spyglass-react/performance";
  * attachPerformance();
  * ```
  */
 export function attachPerformance(options: PerformanceAdapterOptions = {}): () => void {
   const core = getCore();
+  // Guards against double-scheduling the rAF loop — see the equivalent
+  // comment in `console.ts`'s `attachConsole`.
+  if (!core.markAttached("performance")) return () => {};
   core.registerCapability("performance");
 
   const stallThresholdMs = options.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS;

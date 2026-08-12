@@ -106,7 +106,7 @@ export function NetworkView({ appId }: { appId: string }) {
           {requests.length === 0 && (
             <div className="view-empty">
               <p>
-                No network activity yet. Attach <code>attachNetwork()</code> from <code>@datamobile/sdk/network</code>.
+                No network activity yet. Attach <code>attachNetwork()</code> from <code>spyglass-react/network</code>.
               </p>
             </div>
           )}

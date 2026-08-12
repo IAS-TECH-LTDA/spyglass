@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useRecoilTransactionObserver_UNSTABLE } from "recoil";
-import { createEnvelope, diffValues, hashValue, safeSerialize } from "@datamobile/protocol";
-import type { StateActionPayload, StateInitPayload } from "@datamobile/protocol";
+import { createEnvelope, diffValues, hashValue, safeSerialize } from "spyglass-protocol";
+import type { StateActionPayload, StateInitPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 export interface RecoilAtomWatch {
@@ -26,7 +26,7 @@ interface RecoilSnapshotLike {
  *
  * ```tsx
  * function RecoilInspectorBridge() {
- *   useDataMobileRecoil([
+ *   useSpyglassRecoil([
  *     { atom: countAtom, name: "count" },
  *     { atom: userAtom, name: "user" },
  *   ]);
@@ -39,7 +39,7 @@ interface RecoilSnapshotLike {
  * </RecoilRoot>
  * ```
  */
-export function useDataMobileRecoil(atoms: RecoilAtomWatch[], options: RecoilAdapterOptions = {}): void {
+export function useSpyglassRecoil(atoms: RecoilAtomWatch[], options: RecoilAdapterOptions = {}): void {
   const core = getCore();
   const storeId = options.storeId ?? "recoil";
   const prevValues = useRef(new Map<string, unknown>());

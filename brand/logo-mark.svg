@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="Spyglass">
+  <title>Spyglass</title>
+  <defs>
+    <linearGradient id="sgStroke" x1="6" y1="3" x2="18" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7AA2FF" />
+      <stop offset="1" stop-color="#5B8CFF" />
+    </linearGradient>
+  </defs>
+  <!-- Monogram "S": the upper terminal doubles as the spyglass lens. -->
+  <path
+    d="M16.5 7C16.5 4.5 14.2 3 11.6 3C8.8 3 6.4 4.6 6.4 7.1C6.4 9.2 8.1 10.2 10.2 10.8L13.9 11.9C16.1 12.5 17.7 13.6 17.7 16.1C17.7 18.8 15.1 20.3 12.1 20.3C9.3 20.3 6.7 18.8 6.7 16.4"
+    stroke="url(#sgStroke)"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="17" cy="6.6" r="2.9" fill="#E6E8EE" />
+  <circle cx="17.9" cy="5.8" r="0.9" fill="#5B8CFF" />
+</svg>

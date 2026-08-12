@@ -1,4 +1,5 @@
-import { DEFAULT_HOST } from "@datamobile/protocol";
+import { DEFAULT_HOST } from "spyglass-protocol";
+import { loadNativeModules, loadPlatform } from "../reactNative.js";
 
 /**
  * Parses the host portion out of a Metro/Expo dev-server URL, e.g.
@@ -30,11 +31,6 @@ function hostPortToHost(value: string | null | undefined): string | null {
 
 function isLikelyIpAddress(host: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith("[");
-}
-
-interface ReactNativeModuleShape {
-  NativeModules?: { SourceCode?: { scriptURL?: string | null } };
-  Platform?: { OS?: string; constants?: { ServerHost?: string | null } };
 }
 
 interface ExpoConstantsShape {
@@ -75,19 +71,19 @@ async function resolveDevHostCandidates(): Promise<string[]> {
   let isAndroid = false;
   let host: string | null = null;
 
-  try {
-    const rn = (await import("react-native")) as ReactNativeModuleShape;
-    isAndroid = rn.Platform?.OS === "android";
-    host =
-      parseDevServerHost(rn.NativeModules?.SourceCode?.scriptURL) ??
-      // Android/bridgeless fallback — cheaper and less version-sensitive
-      // than reaching into RN's internal `getDevServer()` module, whose
-      // path has moved between versions.
-      hostPortToHost(rn.Platform?.constants?.ServerHost);
-  } catch {
-    // Not running inside a React Native runtime (e.g. Node, tests, or a
-    // ReactJS/web app) — fall through to the other signals below.
-  }
+  // loadPlatform()/loadNativeModules() never throw — each already falls
+  // back internally (deep RN path -> top-level "react-native" -> null), so
+  // "not a React Native runtime at all" (Node, tests, a ReactJS/web app)
+  // just resolves both to null here and falls through to the signals below.
+  const platform = await loadPlatform();
+  const nativeModules = await loadNativeModules();
+  isAndroid = platform?.OS === "android";
+  host =
+    parseDevServerHost(nativeModules?.SourceCode?.scriptURL) ??
+    // Android/bridgeless fallback — cheaper and less version-sensitive than
+    // reaching into RN's internal `getDevServer()` module, whose path has
+    // moved between versions.
+    hostPortToHost(platform?.constants?.ServerHost);
 
   if (host == null) {
     try {

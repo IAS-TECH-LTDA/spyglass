@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { LogEntryPayload, LogLevel } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { LogEntryPayload, LogLevel } from "spyglass-protocol";
 import { getCore } from "./core.js";
 
 export interface ConsoleAdapterOptions {
@@ -15,12 +15,16 @@ const DEFAULT_LEVELS: LogLevel[] = ["log", "info", "warn", "error", "debug"];
  * app already logs to) and streamed to the desktop inspector.
  *
  * ```ts
- * import { attachConsole } from "@datamobile/sdk/console";
+ * import { attachConsole } from "spyglass-react/console";
  * attachConsole();
  * ```
  */
 export function attachConsole(options: ConsoleAdapterOptions = {}): () => void {
   const core = getCore();
+  // Guards against double-patching `console[level]` — a real risk now that
+  // `init()` can auto-attach this in dev (see `index.ts`) while an app might
+  // also call `attachConsole()` itself, whether from old code or by habit.
+  if (!core.markAttached("console")) return () => {};
   core.registerCapability("console");
   const levels = options.levels ?? DEFAULT_LEVELS;
 

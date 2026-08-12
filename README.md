@@ -1,6 +1,6 @@
-# DataMobile
+# Spyglass
 
-DataMobile is a visual, real-time inspector for React Native, Expo and
+Spyglass is a visual, real-time inspector for React Native, Expo and
 ReactJS apps: navigation, state management, local storage, console logs and
 network requests, viewed live in a desktop app — similar in spirit to
 [Reactotron](https://github.com/infinitered/reactotron), built as a pnpm
@@ -12,8 +12,8 @@ monorepo of three pieces that talk over one wire protocol.
 
 | Package | What it is |
 |---|---|
-| [`@datamobile/protocol`](./packages/protocol) | Dependency-free shared types/helpers for the SDK↔Desktop WebSocket protocol. Source of truth — the Rust side of the desktop app is hand-mirrored from it. |
-| [`@datamobile/sdk`](./packages/sdk) | Instrumentation SDK embedded in your React Native/Expo/web app. Opens a WebSocket to the desktop app and streams events. |
+| [`spyglass-protocol`](./packages/protocol) | Dependency-free shared types/helpers for the SDK↔Desktop WebSocket protocol. Source of truth — the Rust side of the desktop app is hand-mirrored from it. |
+| [`spyglass-react`](./packages/sdk) | Instrumentation SDK embedded in your React Native/Expo/web app. Opens a WebSocket to the desktop app and streams events. |
 | `apps/desktop` | Tauri app (React/Vite frontend + Rust backend) — the desktop inspector itself. Not published; download/build it to run locally. |
 
 ## Quick start
@@ -22,10 +22,10 @@ monorepo of three pieces that talk over one wire protocol.
    built release once one exists).
 2. In your app:
    ```bash
-   npm install --save-dev @datamobile/sdk
+   npm install --save-dev spyglass-react
    ```
    ```ts
-   import { init } from "@datamobile/sdk";
+   import { init } from "spyglass-react";
 
    init({ appName: "MyApp" });
    ```

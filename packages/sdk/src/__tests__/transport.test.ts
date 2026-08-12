@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createEnvelope, decodeEnvelope } from "@datamobile/protocol";
+import { createEnvelope, decodeEnvelope } from "spyglass-protocol";
 import { Transport, type WebSocketInstanceLike, type WebSocketLike } from "../transport/ws.js";
 
 /** Minimal fake WebSocket the test controls by hand (no real network). */

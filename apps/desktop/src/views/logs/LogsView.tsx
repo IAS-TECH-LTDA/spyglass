@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { LogLevel } from "@datamobile/protocol";
+import type { LogLevel } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
 import { CopyButton } from "../../components/CopyButton";
 import { JsonTree } from "../../components/JsonTree";
@@ -64,7 +64,7 @@ export function LogsView({ appId }: { appId: string }) {
       {logs.length === 0 ? (
         <div className="view-empty">
           <p>
-            No console output yet. Attach <code>attachConsole()</code> from <code>@datamobile/sdk/console</code>.
+            No console output yet. Attach <code>attachConsole()</code> from <code>spyglass-react/console</code>.
           </p>
         </div>
       ) : filtered.length === 0 ? (

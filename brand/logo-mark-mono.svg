@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="Spyglass">
+  <title>Spyglass</title>
+  <!--
+    Single-color variant: uses currentColor so it inherits text color on
+    any background (light UI chrome, print, favicons that can't render a
+    gradient). Same "S" as logo-mark.svg, but the lens is an outlined ring
+    instead of a filled disc — a solid fill would look like a stray dot at
+    small sizes once there's no second color to separate it from the stroke.
+  -->
+  <path
+    d="M16.5 7C16.5 4.5 14.2 3 11.6 3C8.8 3 6.4 4.6 6.4 7.1C6.4 9.2 8.1 10.2 10.2 10.8L13.9 11.9C16.1 12.5 17.7 13.6 17.7 16.1C17.7 18.8 15.1 20.3 12.1 20.3C9.3 20.3 6.7 18.8 6.7 16.4"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="17" cy="6.6" r="2.9" stroke="currentColor" stroke-width="1.6" fill="none" />
+</svg>

@@ -42,6 +42,15 @@ describe("parseDevServerHost", () => {
  * `getDevHostCandidates`/`warmDevHost` cache their result at module scope,
  * so each test needs a fresh module instance to see a different mocked
  * environment — same pattern as `detect.test.ts`.
+ *
+ * Mocked at the `../reactNative.js` boundary (`loadPlatform`/
+ * `loadNativeModules`), not at `react-native` itself: those two functions
+ * resolve `react-native`'s `Platform`/`NativeModules` via a literal
+ * `require()` internally (see `reactNative.ts`), which — unlike a plain
+ * `import` specifier — no Vitest mocking primitive can intercept. Mocking
+ * `../reactNative.js` instead exercises exactly the same devHost logic
+ * (branching on `Platform.OS`/`NativeModules.SourceCode.scriptURL`) without
+ * needing to reach through a call `vi.doMock` can't see.
  */
 describe("devHost candidate resolution", () => {
   beforeEach(() => {
@@ -49,15 +58,15 @@ describe("devHost candidate resolution", () => {
   });
 
   afterEach(() => {
-    vi.doUnmock("react-native");
+    vi.doUnmock("../reactNative.js");
     vi.doUnmock("expo-constants");
     vi.unstubAllGlobals();
   });
 
   it("uses the LAN IP parsed from scriptURL on a physical device", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: { scriptURL: "http://192.168.1.5:8081/index.bundle?platform=ios" } },
-      Platform: { OS: "ios" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: { scriptURL: "http://192.168.1.5:8081/index.bundle?platform=ios" } }),
+      loadPlatform: async () => ({ OS: "ios" }),
     }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -65,16 +74,19 @@ describe("devHost candidate resolution", () => {
   });
 
   it("falls back to localhost when react-native has no SourceCode", async () => {
-    vi.doMock("react-native", () => ({ Platform: { OS: "ios" } }));
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => ({ OS: "ios" }),
+    }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
     await expect(warmDevHost()).resolves.toEqual(["localhost"]);
   });
 
   it("falls back to localhost when scriptURL is absent and nothing else resolves (standalone build)", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: {} },
-      Platform: { OS: "android" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: {} }),
+      loadPlatform: async () => ({ OS: "android" }),
     }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -82,9 +94,9 @@ describe("devHost candidate resolution", () => {
   });
 
   it("appends 10.0.2.2 only on Android when Metro resolves to loopback", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: { scriptURL: "http://localhost:8081/index.bundle" } },
-      Platform: { OS: "android" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: { scriptURL: "http://localhost:8081/index.bundle" } }),
+      loadPlatform: async () => ({ OS: "android" }),
     }));
 
     const { getDevHostCandidates, warmDevHost } = await import("../transport/devHost.js");
@@ -93,9 +105,9 @@ describe("devHost candidate resolution", () => {
   });
 
   it("does not append 10.0.2.2 on iOS with loopback", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: { scriptURL: "http://localhost:8081/index.bundle" } },
-      Platform: { OS: "ios" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: { scriptURL: "http://localhost:8081/index.bundle" } }),
+      loadPlatform: async () => ({ OS: "ios" }),
     }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -103,9 +115,9 @@ describe("devHost candidate resolution", () => {
   });
 
   it("reads Platform.constants.ServerHost when there is no SourceCode.scriptURL", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: {},
-      Platform: { OS: "android", constants: { ServerHost: "localhost:8081" } },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({}),
+      loadPlatform: async () => ({ OS: "android", constants: { ServerHost: "localhost:8081" } }),
     }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -113,9 +125,10 @@ describe("devHost candidate resolution", () => {
   });
 
   it("falls back to location.hostname when there is no react-native runtime", async () => {
-    vi.doMock("react-native", () => {
-      throw new Error("not a React Native runtime");
-    });
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => null,
+    }));
     vi.stubGlobal("location", { hostname: "192.168.0.9", protocol: "http:" });
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -123,9 +136,10 @@ describe("devHost candidate resolution", () => {
   });
 
   it("ignores location when the protocol is file:", async () => {
-    vi.doMock("react-native", () => {
-      throw new Error("not a React Native runtime");
-    });
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => null,
+    }));
     vi.stubGlobal("location", { hostname: "192.168.0.9", protocol: "file:" });
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -133,9 +147,10 @@ describe("devHost candidate resolution", () => {
   });
 
   it("reads expoConfig.hostUri when react-native is unavailable", async () => {
-    vi.doMock("react-native", () => {
-      throw new Error("not a React Native runtime");
-    });
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => null,
+    }));
     vi.doMock("expo-constants", () => ({ default: { expoConfig: { hostUri: "192.168.1.5:8081" } } }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -143,9 +158,10 @@ describe("devHost candidate resolution", () => {
   });
 
   it("reads expoGoConfig.debuggerHost as a fallback", async () => {
-    vi.doMock("react-native", () => {
-      throw new Error("not a React Native runtime");
-    });
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => null,
+    }));
     vi.doMock("expo-constants", () => ({ default: { expoGoConfig: { debuggerHost: "192.168.1.7:19000" } } }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -153,9 +169,10 @@ describe("devHost candidate resolution", () => {
   });
 
   it("reads legacy manifest.debuggerHost as a fallback", async () => {
-    vi.doMock("react-native", () => {
-      throw new Error("not a React Native runtime");
-    });
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => null,
+    }));
     vi.doMock("expo-constants", () => ({ default: { manifest: { debuggerHost: "192.168.1.9:19000" } } }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -163,9 +180,9 @@ describe("devHost candidate resolution", () => {
   });
 
   it("demotes a DNS/tunnel host behind localhost instead of dropping it", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: { scriptURL: "http://abc123.exp.direct:80/index.bundle" } },
-      Platform: { OS: "ios" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: { scriptURL: "http://abc123.exp.direct:80/index.bundle" } }),
+      loadPlatform: async () => ({ OS: "ios" }),
     }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
@@ -173,9 +190,10 @@ describe("devHost candidate resolution", () => {
   });
 
   it("falls back to localhost when nothing resolves and nothing throws", async () => {
-    vi.doMock("react-native", () => {
-      throw new Error("not a React Native runtime");
-    });
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform: async () => null,
+    }));
 
     const { warmDevHost } = await import("../transport/devHost.js");
     await expect(warmDevHost()).resolves.toEqual(["localhost"]);
@@ -193,13 +211,16 @@ describe("createDevHostResolver", () => {
   });
 
   afterEach(() => {
-    vi.doUnmock("react-native");
+    vi.doUnmock("../reactNative.js");
     vi.unstubAllGlobals();
   });
 
   it("an explicit string always wins, and never touches react-native", async () => {
-    const rnFactory = vi.fn(() => ({ Platform: { OS: "ios" } }));
-    vi.doMock("react-native", rnFactory);
+    const loadPlatform = vi.fn(async () => ({ OS: "ios" }));
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => null,
+      loadPlatform,
+    }));
 
     const { createDevHostResolver } = await import("../transport/devHost.js");
     const resolver = createDevHostResolver("10.1.2.3");
@@ -207,7 +228,7 @@ describe("createDevHostResolver", () => {
     expect(resolver.needsWarmUp).toBe(false);
     expect(resolver.next()).toBe("10.1.2.3");
     expect(resolver.next()).toBe("10.1.2.3");
-    expect(rnFactory).not.toHaveBeenCalled();
+    expect(loadPlatform).not.toHaveBeenCalled();
   });
 
   it("an explicit function is re-invoked on every next()", async () => {
@@ -220,9 +241,9 @@ describe("createDevHostResolver", () => {
   });
 
   it("rotates through candidates and pin() freezes the last returned value", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: { scriptURL: "http://localhost:8081/index.bundle" } },
-      Platform: { OS: "android" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: { scriptURL: "http://localhost:8081/index.bundle" } }),
+      loadPlatform: async () => ({ OS: "android" }),
     }));
 
     const { createDevHostResolver, warmDevHost } = await import("../transport/devHost.js");
@@ -237,9 +258,9 @@ describe("createDevHostResolver", () => {
   });
 
   it("needsWarmUp reflects whether the candidate cache has been filled", async () => {
-    vi.doMock("react-native", () => ({
-      NativeModules: { SourceCode: { scriptURL: "http://192.168.1.5:8081/index.bundle" } },
-      Platform: { OS: "ios" },
+    vi.doMock("../reactNative.js", () => ({
+      loadNativeModules: async () => ({ SourceCode: { scriptURL: "http://192.168.1.5:8081/index.bundle" } }),
+      loadPlatform: async () => ({ OS: "ios" }),
     }));
 
     const { createDevHostResolver, warmDevHost } = await import("../transport/devHost.js");

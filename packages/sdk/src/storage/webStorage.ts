@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageEngine, StorageSnapshotPayload } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageEngine, StorageSnapshotPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 import { parseMaybeJson } from "./shared.js";
 
@@ -20,7 +20,7 @@ export interface WebStorageAdapterOptions {
  * listener is added on top to also pick up cross-tab writes for free.
  *
  * ```ts
- * import { attachWebStorage } from "@datamobile/sdk/storage/web-storage";
+ * import { attachWebStorage } from "spyglass-react/storage/web-storage";
  *
  * attachWebStorage(window.localStorage);
  * attachWebStorage(window.sessionStorage);

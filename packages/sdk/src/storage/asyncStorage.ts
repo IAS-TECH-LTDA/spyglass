@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageSnapshotPayload } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageSnapshotPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 import { parseMaybeJson } from "./shared.js";
 
@@ -28,7 +28,7 @@ export interface AsyncStorageAdapterOptions {
  *
  * ```ts
  * import AsyncStorage from "@react-native-async-storage/async-storage";
- * import { attachAsyncStorage } from "@datamobile/sdk/storage/async-storage";
+ * import { attachAsyncStorage } from "spyglass-react/storage/async-storage";
  *
  * attachAsyncStorage(AsyncStorage);
  * ```

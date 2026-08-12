@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { StorageChangePayload, StorageSnapshotPayload, TableSchema } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { StorageChangePayload, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** A Realm property schema entry is either a shorthand type string or a descriptor object with `.type`. */
@@ -34,7 +34,7 @@ export interface RealmAdapterOptions {
  *
  * ```ts
  * import Realm from "realm";
- * import { attachRealm } from "@datamobile/sdk/storage/realm";
+ * import { attachRealm } from "spyglass-react/storage/realm";
  *
  * const realm = await Realm.open({ schema: [...] });
  * attachRealm(realm);

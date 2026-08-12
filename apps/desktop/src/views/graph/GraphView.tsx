@@ -56,7 +56,7 @@ export function GraphView({ appId }: { appId: string }) {
       <div className="view-empty">
         <p>
           No navigation events yet. Call <code>attachNavigation(navigationRef)</code> from{" "}
-          <code>@datamobile/sdk/navigation</code> and navigate to a screen in the app.
+          <code>spyglass-react/navigation</code> and navigate to a screen in the app.
         </p>
       </div>
     );

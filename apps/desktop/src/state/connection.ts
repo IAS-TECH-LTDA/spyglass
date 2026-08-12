@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { applyPatch } from "@datamobile/protocol";
+import { applyPatch } from "spyglass-protocol";
 import type {
   AnyEnvelope,
-  DataMobileNavState,
+  SpyglassNavState,
   LogLevel,
   NavStatePayload,
   NavTransitionPayload,
@@ -11,8 +11,20 @@ import type {
   StorageEngine,
   StorageSnapshotPayload,
   StoreType,
-} from "@datamobile/protocol";
+} from "spyglass-protocol";
 import type { AppInfo } from "../ipc";
+
+export type Tab = "graph" | "stores" | "storage" | "queries" | "logs" | "network" | "performance";
+
+/** Which tab shows alert-worthy events of each kind — used to decide when a new one counts as "unseen". */
+const TAB_FOR_ALERT_KIND: Record<"log" | "network", Tab> = { log: "logs", network: "network" };
+
+/** Inverse of `TAB_FOR_ALERT_KIND` — `null` for tabs with no alert kind of their own (Navigation, State, ...). */
+function kindForTab(tab: Tab): "log" | "network" | null {
+  if (tab === "logs") return "log";
+  if (tab === "network") return "network";
+  return null;
+}
 
 export interface StoreEntry {
   storeId: string;
@@ -127,8 +139,14 @@ export interface PerfStall {
   ts: number;
 }
 
+/** Alert-worthy events that arrived while the user wasn't looking at the matching tab — see `recordAlert`/`clearAlerts`. */
+export interface AlertCounts {
+  log: number;
+  network: number;
+}
+
 export interface AppData {
-  nav?: { state: DataMobileNavState; activeRouteKey: string };
+  nav?: { state: SpyglassNavState; activeRouteKey: string };
   lastTransitionAt?: number;
   lastTransitionEdge?: { fromKey?: string; toKey: string };
   /** Persistent flow map — never pruned on `nav/state`, only grown. See `applyNavStateToGraph`/`applyNavTransitionToGraph`. */
@@ -145,19 +163,38 @@ export interface AppData {
   perfSamples: PerfSample[];
   /** Most recent first, capped. */
   perfStalls: PerfStall[];
+  alerts: AlertCounts;
 }
 
 interface ConnectionState {
   apps: Record<string, AppInfo>;
   selectedAppId: string | null;
   data: Record<string, AppData>;
+  /**
+   * Lifted out of `App.tsx` (was a local `useState`) so "unseen" can mean
+   * something: `recordAlert` needs to know which tab is actually on screen
+   * for the selected app, not just which app is selected.
+   */
+  activeTab: Tab;
 
   upsertApp(app: AppInfo): void;
   markDisconnected(appId: string): void;
   removeApp(appId: string): void;
   selectApp(appId: string | null): void;
+  setActiveTab(tab: Tab): void;
   handleEnvelope(envelope: AnyEnvelope): void;
   hydrateFromCache(appId: string, envelopes: AnyEnvelope[]): void;
+  /**
+   * Bumps the unseen counter for `kind`, unless the user is already looking
+   * right at the matching tab for this app — in which case it's a no-op
+   * (nothing to mark "unseen"). Deliberately does **not** gate whether a
+   * sound/notification fires — see `lib/alertRunner.ts`, which calls this
+   * unconditionally alongside its own, separate settings check. A dev with
+   * Spyglass on a second monitor still wants the audible cue even while
+   * sitting on the matching tab.
+   */
+  recordAlert(appId: string, kind: "log" | "network"): void;
+  clearAlerts(appId: string, kind: "log" | "network"): void;
   clearLogs(appId: string): void;
   clearNetwork(appId: string): void;
   clearNavGraph(appId: string): void;
@@ -181,13 +218,26 @@ function emptyAppData(): AppData {
     network: [],
     perfSamples: [],
     perfStalls: [],
+    alerts: { log: 0, network: 0 },
   };
+}
+
+/** Returns `data` unchanged (same reference) if there's nothing to clear, so callers can skip a re-render. */
+function clearAlertCount(
+  data: Record<string, AppData>,
+  appId: string,
+  kind: "log" | "network",
+): Record<string, AppData> {
+  const appData = data[appId];
+  if (!appData || appData.alerts[kind] === 0) return data;
+  return { ...data, [appId]: { ...appData, alerts: { ...appData.alerts, [kind]: 0 } } };
 }
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
   apps: {},
   selectedAppId: null,
   data: {},
+  activeTab: "graph",
 
   upsertApp(app) {
     set((s) => {
@@ -239,7 +289,41 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   selectApp(appId) {
-    set({ selectedAppId: appId });
+    set((s) => {
+      if (appId === null) return { selectedAppId: null };
+      // Selecting an app while already sitting on its Logs/Network tab
+      // (e.g. re-selecting the same app, or switching from another app with
+      // the same tab open) counts as "seen" immediately, same as
+      // `setActiveTab` below.
+      const kind = kindForTab(s.activeTab);
+      const data = kind ? clearAlertCount(s.data, appId, kind) : s.data;
+      return { selectedAppId: appId, data };
+    });
+  },
+
+  setActiveTab(tab) {
+    set((s) => {
+      if (!s.selectedAppId) return { activeTab: tab };
+      const kind = kindForTab(tab);
+      const data = kind ? clearAlertCount(s.data, s.selectedAppId, kind) : s.data;
+      return { activeTab: tab, data };
+    });
+  },
+
+  recordAlert(appId, kind) {
+    set((s) => {
+      const alreadyVisible = s.selectedAppId === appId && s.activeTab === TAB_FOR_ALERT_KIND[kind];
+      if (alreadyVisible) return s;
+      const appData = s.data[appId];
+      if (!appData) return s; // envelope for an app not yet in the store — shouldn't happen, but don't crash over a badge count
+      return {
+        data: { ...s.data, [appId]: { ...appData, alerts: { ...appData.alerts, [kind]: appData.alerts[kind] + 1 } } },
+      };
+    });
+  },
+
+  clearAlerts(appId, kind) {
+    set((s) => ({ data: clearAlertCount(s.data, appId, kind) }));
   },
 
   handleEnvelope(envelope) {
@@ -484,7 +568,7 @@ function applyNavStateToGraph(graph: NavGraph, payload: NavStatePayload, now: nu
   let edges = graph.edges;
   let activeName: string | undefined;
 
-  function visit(state: DataMobileNavState) {
+  function visit(state: SpyglassNavState) {
     for (let i = 0; i < state.routes.length; i++) {
       const route = state.routes[i];
       nodes = upsertNode(nodes, route.name, route.params, now);

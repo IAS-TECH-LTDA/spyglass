@@ -1,5 +1,5 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { QueryChangePayload, QueryInfo, QuerySnapshotPayload } from "@datamobile/protocol";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { QueryChangePayload, QueryInfo, QuerySnapshotPayload } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** Structural subset of `@tanstack/query-core`'s `Query`, avoids depending on `@tanstack/react-query`. */
@@ -55,7 +55,7 @@ function toQueryInfo(query: QueryLike): QueryInfo {
  *
  * ```ts
  * import { QueryClient } from "@tanstack/react-query";
- * import { attachReactQuery } from "@datamobile/sdk/query/react-query";
+ * import { attachReactQuery } from "spyglass-react/query/react-query";
  *
  * const queryClient = new QueryClient();
  * attachReactQuery(queryClient);

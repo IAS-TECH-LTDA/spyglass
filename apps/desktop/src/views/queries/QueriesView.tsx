@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { QueryInfo } from "@datamobile/protocol";
+import type { QueryInfo } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
 import { JsonTree } from "../../components/JsonTree";
 import { CopyButton } from "../../components/CopyButton";
@@ -15,7 +15,7 @@ export function QueriesView({ appId }: { appId: string }) {
       <div className="view-empty">
         <p>
           No query cache connected yet. Attach <code>attachReactQuery(queryClient)</code> from{" "}
-          <code>@datamobile/sdk/query/react-query</code>.
+          <code>spyglass-react/query/react-query</code>.
         </p>
       </div>
     );

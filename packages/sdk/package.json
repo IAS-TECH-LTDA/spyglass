@@ -1,7 +1,7 @@
 {
-  "name": "@datamobile/sdk",
+  "name": "spyglass-react",
   "version": "0.1.0",
-  "description": "Instrumentation SDK for React Native and web apps. Streams navigation, state and storage events to the DataMobile desktop inspector.",
+  "description": "Instrumentation SDK for React Native and web apps. Streams navigation, state and storage events to the Spyglass desktop inspector.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -88,7 +88,7 @@
     "prepublishOnly": "node -e \"require('fs').accessSync('dist/index.js')\""
   },
   "dependencies": {
-    "@datamobile/protocol": "workspace:^"
+    "spyglass-protocol": "workspace:^"
   },
   "peerDependencies": {
     "@react-navigation/native": ">=6",
@@ -134,12 +134,12 @@
   "author": "Italo Souza",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/italosouza/datamobile.git",
+    "url": "git+https://github.com/italosouza/spyglass.git",
     "directory": "packages/sdk"
   },
-  "homepage": "https://github.com/italosouza/datamobile#readme",
+  "homepage": "https://github.com/italosouza/spyglass#readme",
   "bugs": {
-    "url": "https://github.com/italosouza/datamobile/issues"
+    "url": "https://github.com/italosouza/spyglass/issues"
   },
   "keywords": [
     "react-native",

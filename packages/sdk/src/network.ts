@@ -1,6 +1,6 @@
-import { createEnvelope, safeSerialize } from "@datamobile/protocol";
-import type { NetworkRequestPayload, NetworkResponsePayload } from "@datamobile/protocol";
-import { getCore, type DataMobileCore } from "./core.js";
+import { createEnvelope, safeSerialize } from "spyglass-protocol";
+import type { NetworkRequestPayload, NetworkResponsePayload } from "spyglass-protocol";
+import { getCore, type SpyglassCore } from "./core.js";
 
 export interface NetworkAdapterOptions {
   /** Set to false to report method/url/status/timing without request or response bodies. */
@@ -22,12 +22,15 @@ export interface NetworkAdapterOptions {
  * `fetch` too unless running inside React Native.
  *
  * ```ts
- * import { attachNetwork } from "@datamobile/sdk/network";
+ * import { attachNetwork } from "spyglass-react/network";
  * attachNetwork();
  * ```
  */
 export function attachNetwork(options: NetworkAdapterOptions = {}): () => void {
   const core = getCore();
+  // Guards against double-patching XHR/fetch — see the equivalent comment
+  // in `console.ts`'s `attachConsole`.
+  if (!core.markAttached("network")) return () => {};
   core.registerCapability("network");
   const captureBody = options.captureBody ?? true;
 
@@ -50,10 +53,10 @@ function isReactNativeEnvironment(): boolean {
 // ---------------------------------------------------------------------------
 
 interface XMLHttpRequestWithMeta extends XMLHttpRequest {
-  __dataMobile?: { method: string; url: string; headers: Record<string, string> };
+  __spyglass?: { method: string; url: string; headers: Record<string, string> };
 }
 
-function patchXHR(core: DataMobileCore, captureBody: boolean): () => void {
+function patchXHR(core: SpyglassCore, captureBody: boolean): () => void {
   const XHR = (globalThis as { XMLHttpRequest?: typeof XMLHttpRequest }).XMLHttpRequest;
   if (!XHR) return () => {};
 
@@ -62,17 +65,17 @@ function patchXHR(core: DataMobileCore, captureBody: boolean): () => void {
   const originalSetRequestHeader = XHR.prototype.setRequestHeader;
 
   XHR.prototype.open = function (this: XMLHttpRequestWithMeta, method: string, url: string, ...rest: unknown[]) {
-    this.__dataMobile = { method, url, headers: {} };
+    this.__spyglass = { method, url, headers: {} };
     return (originalOpen as (...a: unknown[]) => void).apply(this, [method, url, ...rest]);
   };
 
   XHR.prototype.setRequestHeader = function (this: XMLHttpRequestWithMeta, name: string, value: string) {
-    if (this.__dataMobile) this.__dataMobile.headers[name] = value;
+    if (this.__spyglass) this.__spyglass.headers[name] = value;
     return originalSetRequestHeader.call(this, name, value);
   };
 
   XHR.prototype.send = function (this: XMLHttpRequestWithMeta, body?: Document | XMLHttpRequestBodyInit | null) {
-    const meta = this.__dataMobile;
+    const meta = this.__spyglass;
     if (!meta) return originalSend.call(this, body);
 
     const requestId = nextRequestId();
@@ -114,7 +117,7 @@ function xhrBodyPreview(body: Document | XMLHttpRequestBodyInit | null | undefin
 }
 
 function sendXhrResponse(
-  core: DataMobileCore,
+  core: SpyglassCore,
   requestId: string,
   startedAt: number,
   xhr: XMLHttpRequest,
@@ -161,7 +164,7 @@ function parseRawHeaders(raw: string | null | undefined): Record<string, string>
 
 type FetchFn = typeof fetch;
 
-function patchFetch(core: DataMobileCore, captureBody: boolean): () => void {
+function patchFetch(core: SpyglassCore, captureBody: boolean): () => void {
   const original = (globalThis as { fetch?: FetchFn }).fetch;
   if (!original) return () => {};
 

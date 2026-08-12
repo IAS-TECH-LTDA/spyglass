@@ -25,7 +25,7 @@ que resolvem esse host automaticamente na maioria dos casos.
 
 ## Histórias de usuário
 
-Como dev integrando o `@datamobile/sdk` no meu app, quero que o SDK descubra
+Como dev integrando o `spyglass-react` no meu app, quero que o SDK descubra
 sozinho o host do desktop a partir da URL do bundler (Metro/Expo), para eu
 não precisar passar `host` manualmente na maioria dos casos — e quando não
 conseguir conectar, quero uma mensagem clara no console dizendo contra qual
@@ -131,7 +131,7 @@ manualmente — validado nos cenários manuais do plano de teste abaixo.
   2. Android Emulator com adb disponível — conecta via `localhost` +
      `adb reverse` automático (spec 0002 depende da 0003... ver spec de
      desktop para o watcher de adb).
-  3. Android Emulator com `DATAMOBILE_DISABLE_ADB=1` — conecta via
+  3. Android Emulator com `SPYGLASS_DISABLE_ADB=1` — conecta via
      `10.0.2.2` após uma tentativa falha em `localhost`.
   4. Device físico na mesma Wi-Fi — conecta sozinho pelo IP do Metro.
   5. Device físico com desktop fechado — uma linha de warn, depois no

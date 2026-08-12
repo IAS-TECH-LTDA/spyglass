@@ -1,5 +1,5 @@
-import { decodeEnvelope, encodeEnvelope } from "@datamobile/protocol";
-import type { AnyEnvelope } from "@datamobile/protocol";
+import { decodeEnvelope, encodeEnvelope } from "spyglass-protocol";
+import type { AnyEnvelope } from "spyglass-protocol";
 
 export interface TransportOptions {
   /**
@@ -101,7 +101,7 @@ function unref(timer: ReturnType<typeof setTimeout>): void {
 }
 
 /**
- * WebSocket client used by the SDK core to talk to the DataMobile desktop
+ * WebSocket client used by the SDK core to talk to the Spyglass desktop
  * server. Handles automatic reconnection with exponential backoff and
  * queues outgoing messages while disconnected (bounded, drops oldest first)
  * so a brief desktop restart doesn't lose the SDK's `hello`/state stream.
@@ -191,7 +191,7 @@ export class Transport {
     const Impl = this.options.webSocketImpl ?? (globalThis as { WebSocket?: WebSocketLike }).WebSocket;
     if (!Impl) {
       throw new Error(
-        "[DataMobile] No WebSocket implementation available in this environment. " +
+        "[Spyglass] No WebSocket implementation available in this environment. " +
           "Pass `webSocketImpl` explicitly if you're running outside React Native/a browser.",
       );
     }

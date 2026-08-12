@@ -64,11 +64,40 @@ describe("safeSerialize", () => {
     obj.self = obj;
     const result = safeSerialize(obj) as Record<string, unknown>;
     expect(result.a).toBe(1);
-    expect((result.self as { __datamobile_truncated: boolean }).__datamobile_truncated).toBe(true);
+    expect((result.self as { __spyglass_truncated: boolean }).__spyglass_truncated).toBe(true);
   });
 
   it("passes through plain JSON-safe values untouched", () => {
     expect(safeSerialize({ a: [1, 2, "x"] })).toEqual({ a: [1, 2, "x"] });
+  });
+
+  it("serializes Error name/message/stack instead of producing {}", () => {
+    const err = new Error("boom");
+    const result = safeSerialize(err) as Record<string, unknown>;
+    expect(result.name).toBe("Error");
+    expect(result.message).toBe("boom");
+    expect(typeof result.stack).toBe("string");
+  });
+
+  it("preserves extra own-enumerable properties on custom Error subclasses", () => {
+    class CameraError extends Error {
+      code: string;
+      constructor(message: string, code: string) {
+        super(message);
+        this.name = "CameraError";
+        this.code = code;
+      }
+    }
+    const err = new CameraError("Encountered a fatal Camera error!", "camera/fatal-error");
+    const result = safeSerialize(err) as Record<string, unknown>;
+    expect(result.name).toBe("CameraError");
+    expect(result.message).toBe("Encountered a fatal Camera error!");
+    expect(result.code).toBe("camera/fatal-error");
+  });
+
+  it("handles an Error nested inside a plain object/array", () => {
+    const result = safeSerialize({ error: new Error("nested") }) as { error: Record<string, unknown> };
+    expect(result.error.message).toBe("nested");
   });
 });
 

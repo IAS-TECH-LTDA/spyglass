@@ -1,5 +1,5 @@
 /**
- * Shared wire types for the DataMobile SDK <-> Desktop WebSocket protocol.
+ * Shared wire types for the Spyglass SDK <-> Desktop WebSocket protocol.
  *
  * Every message on the wire is an `Envelope<T>`. `T` is one of the payload
  * interfaces below, keyed by `Envelope.type`. Keep this file dependency-free
@@ -103,23 +103,23 @@ export interface PongPayload {
 // Navigation
 // ---------------------------------------------------------------------------
 
-export interface DataMobileRoute {
+export interface SpyglassRoute {
   key: string;
   name: string;
   params?: Record<string, unknown>;
   /** Present when this route owns a nested navigator (stack/tab/drawer). */
-  state?: DataMobileNavState;
+  state?: SpyglassNavState;
 }
 
-export interface DataMobileNavState {
+export interface SpyglassNavState {
   /** Index of the active route within `routes`. */
   index: number;
   routeNames?: string[];
-  routes: DataMobileRoute[];
+  routes: SpyglassRoute[];
 }
 
 export interface NavStatePayload {
-  state: DataMobileNavState;
+  state: SpyglassNavState;
   /** Convenience: key of the deepest currently-focused route. */
   activeRouteKey: string;
 }
@@ -330,7 +330,7 @@ export interface NetworkResponsePayload {
 // ---------------------------------------------------------------------------
 
 export interface TruncatedValue {
-  __datamobile_truncated: true;
+  __spyglass_truncated: true;
   preview: string;
   originalType: string;
   originalSize?: number;
@@ -340,7 +340,7 @@ export function isTruncatedValue(v: unknown): v is TruncatedValue {
   return (
     typeof v === "object" &&
     v !== null &&
-    (v as Record<string, unknown>).__datamobile_truncated === true
+    (v as Record<string, unknown>).__spyglass_truncated === true
   );
 }
 

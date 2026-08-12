@@ -1,12 +1,12 @@
 {
-  "name": "datamobile",
+  "name": "spyglass",
   "private": true,
   "version": "0.1.0",
   "description": "Visual real-time inspector for React Native apps: navigation, state management and local storage.",
   "packageManager": "pnpm@11.15.1+sha512.81350b07e53c9538a02f1f2303b4290fa2d7be04e56e2a970c4cc4b417dc761de196edabd49d55c7dc9580db81007c44143e4e3d7e462b3000d23c255122d065",
   "scripts": {
     "build": "pnpm -r --filter=./packages/* build",
-    "dev:desktop": "pnpm --filter @datamobile/desktop tauri dev",
+    "dev:desktop": "pnpm --filter spyglass-desktop tauri dev",
     "dev:playground": "pnpm --filter rn-playground start",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

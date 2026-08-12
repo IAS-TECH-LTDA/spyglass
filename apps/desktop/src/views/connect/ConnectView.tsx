@@ -22,7 +22,7 @@ function noteFor(scenario: Scenario): string {
     case "ios-simulator":
       return "Shares this Mac's network — the SDK detects “localhost” automatically.";
     case "android-emulator":
-      return "Auto-detected. DataMobile keeps “adb reverse tcp:8098 tcp:8098” applied for you (status below); without adb the SDK falls back to “10.0.2.2”.";
+      return "Auto-detected. Spyglass keeps “adb reverse tcp:8098 tcp:8098” applied for you (status below); without adb the SDK falls back to “10.0.2.2”.";
     case "device":
       return "Same Wi-Fi as this Mac. The SDK usually detects this from the Metro URL — pass “host” only if it doesn't.";
   }
@@ -85,7 +85,7 @@ export function ConnectView() {
       <div className="connect-col">
         <h2>No app connected yet</h2>
         <p className="empty-hint">
-          DataMobile is listening on <code>ws://0.0.0.0:{port}</code>. Add the SDK to your app and it shows up here.
+          Spyglass is listening on <code>ws://0.0.0.0:{port}</code>. Add the SDK to your app and it shows up here.
         </p>
 
         <div className="connect-step">
@@ -93,8 +93,8 @@ export function ConnectView() {
           <div className="connect-step-body">
             <div>Install the SDK</div>
             <div className="connect-code">
-              <code>npm i -D @datamobile/sdk</code>
-              <CopyButton text="npm i -D @datamobile/sdk" size="sm" />
+              <code>npm i -D spyglass-react</code>
+              <CopyButton text="npm i -D spyglass-react" size="sm" />
             </div>
           </div>
         </div>

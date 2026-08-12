@@ -1,3 +1,4 @@
+import { isDevEnvironment } from "./env.js";
 import type { TransportDiagnostic } from "./transport/ws.js";
 
 // Captured at module evaluation time — before `init()` (and therefore before
@@ -23,13 +24,6 @@ export interface Diagnostics {
   handle: (event: TransportDiagnostic) => void;
   /** One-off note when host auto-detection picked something other than the default — call once, after warm-up resolves. */
   logResolvedHost: (host: string) => void;
-}
-
-function isDevEnvironment(): boolean {
-  const dev = (globalThis as { __DEV__?: unknown }).__DEV__;
-  if (typeof dev === "boolean") return dev;
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
-  return env?.NODE_ENV !== "production";
 }
 
 /**
@@ -68,7 +62,7 @@ export function createDiagnostics(options?: DiagnosticsOptions): Diagnostics {
       // (e.g. the desktop app closing again) should be reported right away,
       // not silently absorbed by whatever window is left from before.
       loggedOnce = false;
-      rawInfo(`[DataMobile] connected to ${event.url}`);
+      rawInfo(`[Spyglass] connected to ${event.url}`);
       return;
     }
 
@@ -76,7 +70,7 @@ export function createDiagnostics(options?: DiagnosticsOptions): Diagnostics {
 
     if (!shouldLog(Date.now())) return;
     rawWarn(
-      `[DataMobile] can't reach the desktop app at ${event.url} (attempt ${event.attempt}, still retrying).\n` +
+      `[Spyglass] can't reach the desktop app at ${event.url} (attempt ${event.attempt}, still retrying).\n` +
         "  · Is the desktop app running?\n" +
         '  · Physical device: init({ appName, host: "<your Mac\'s LAN IP>" }) — the desktop\'s empty screen lists them\n' +
         "  · Android emulator: adb reverse tcp:8098 tcp:8098 (the desktop app applies this automatically)",
@@ -86,7 +80,7 @@ export function createDiagnostics(options?: DiagnosticsOptions): Diagnostics {
   function logResolvedHost(host: string): void {
     if (!enabled || resolvedHostLogged) return;
     resolvedHostLogged = true;
-    rawInfo(`[DataMobile] resolved dev host "${host}" from the bundler URL.`);
+    rawInfo(`[Spyglass] resolved dev host "${host}" from the bundler URL.`);
   }
 
   return { enabled, handle, logResolvedHost };
