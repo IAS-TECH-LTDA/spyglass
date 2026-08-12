@@ -17,6 +17,73 @@ const SCENARIOS: Array<{ id: Scenario; label: string }> = [
   { id: "android-emulator", label: "Android emulator" },
 ];
 
+type PackageManager = "npm" | "yarn" | "pnpm";
+
+const PACKAGE_MANAGERS: Array<{ id: PackageManager; label: string }> = [
+  { id: "npm", label: "npm" },
+  { id: "yarn", label: "yarn" },
+  { id: "pnpm", label: "pnpm" },
+];
+
+function installCmdFor(pm: PackageManager): string {
+  switch (pm) {
+    case "npm":
+      return "npm i -D spyglass-react";
+    case "yarn":
+      return "yarn add -D spyglass-react";
+    case "pnpm":
+      return "pnpm add -D spyglass-react";
+  }
+}
+
+type StateLib = "redux" | "zustand" | "jotai" | "mobx";
+
+const STATE_LIBS: Array<{ id: StateLib; label: string }> = [
+  { id: "redux", label: "Redux" },
+  { id: "zustand", label: "Zustand" },
+  { id: "jotai", label: "Jotai" },
+  { id: "mobx", label: "MobX" },
+];
+
+function adapterSnippetFor(lib: StateLib): string {
+  switch (lib) {
+    case "redux":
+      return [
+        'import { createSpyglassReduxMiddleware } from "spyglass-react/state/redux";',
+        "",
+        "const store = configureStore({",
+        "  reducer: rootReducer,",
+        "  middleware: (getDefault) => getDefault().concat(createSpyglassReduxMiddleware()),",
+        "});",
+      ].join("\n");
+    case "zustand":
+      return [
+        'import { withSpyglass } from "spyglass-react/state/zustand";',
+        "",
+        "const useStore = create(withSpyglass((set, get) => ({",
+        "  count: 0,",
+        "  increment: () => set((s) => ({ count: s.count + 1 })),",
+        "})));",
+      ].join("\n");
+    case "jotai":
+      return [
+        'import { createStore } from "jotai/vanilla";',
+        'import { attachJotai } from "spyglass-react/state/jotai";',
+        "",
+        "export const store = createStore();",
+        'attachJotai(store, [{ atom: countAtom, name: "count" }]);',
+      ].join("\n");
+    case "mobx":
+      return [
+        'import * as mobx from "mobx";',
+        'import { attachMobx } from "spyglass-react/state/mobx";',
+        "",
+        "export const store = new RootStore();",
+        "attachMobx(mobx, () => store);",
+      ].join("\n");
+  }
+}
+
 function noteFor(scenario: Scenario): string {
   switch (scenario) {
     case "ios-simulator":
@@ -46,6 +113,8 @@ export function ConnectView() {
   const [scenario, setScenario] = useState<Scenario>("device");
   const [selectedIp, setSelectedIp] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [pm, setPm] = useState<PackageManager>("npm");
+  const [stateLib, setStateLib] = useState<StateLib>("redux");
 
   useEffect(() => {
     void refreshConnectionInfo();
@@ -79,6 +148,8 @@ export function ConnectView() {
   const port = connectionInfo?.port ?? 8098;
   const host = scenario === "device" ? selectedIp : null;
   const snippet = snippetFor(scenario, host);
+  const installCmd = installCmdFor(pm);
+  const adapterSnippet = adapterSnippetFor(stateLib);
 
   return (
     <div className="connect-view">
@@ -92,9 +163,22 @@ export function ConnectView() {
           <span className="connect-step-num">1</span>
           <div className="connect-step-body">
             <div>Install the SDK</div>
+            <nav className="connect-scenarios">
+              {PACKAGE_MANAGERS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`storage-chip ${pm === p.id ? "active" : ""}`}
+                  style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
+                  onClick={() => setPm(p.id)}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </nav>
             <div className="connect-code">
-              <code>npm i -D spyglass-react</code>
-              <CopyButton text="npm i -D spyglass-react" size="sm" />
+              <code>{installCmd}</code>
+              <CopyButton text={installCmd} size="sm" />
             </div>
           </div>
         </div>
@@ -166,6 +250,34 @@ export function ConnectView() {
             ))}
           </div>
         )}
+
+        <div className="connect-step">
+          <span className="connect-step-num">4</span>
+          <div className="connect-step-body">
+            <div>Attach a state adapter (optional)</div>
+            <nav className="connect-scenarios">
+              {STATE_LIBS.map((lib) => (
+                <button
+                  key={lib.id}
+                  type="button"
+                  className={`storage-chip ${stateLib === lib.id ? "active" : ""}`}
+                  style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
+                  onClick={() => setStateLib(lib.id)}
+                >
+                  {lib.label}
+                </button>
+              ))}
+            </nav>
+            <div className="connect-code connect-code-multi">
+              <code>{adapterSnippet}</code>
+              <CopyButton text={adapterSnippet} size="sm" />
+            </div>
+            <p className="empty-hint">
+              Navigation, storage (AsyncStorage, MMKV, SQLite, Realm, WatermelonDB) and React Query have their
+              own adapters — see the SDK README.
+            </p>
+          </div>
+        </div>
 
         <div className="connect-status">
           <div className="connect-status-row">

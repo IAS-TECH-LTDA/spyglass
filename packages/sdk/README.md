@@ -7,43 +7,11 @@ state, storage, console and network events to the
 ## Install
 
 ```bash
+# whichever your app already uses — all three install the same package
 npm install --save-dev spyglass-react
-# or: yarn add -D spyglass-react / pnpm add -D spyglass-react
+yarn add --dev spyglass-react
+pnpm add --save-dev spyglass-react
 ```
-
-### Installing from source (before this is published to npm)
-
-While `spyglass-react` isn't on npm yet, install it straight from a clone
-of the [Spyglass monorepo](https://github.com/italosouza/spyglass):
-
-```bash
-# in the Spyglass repo — the SDK ships compiled, consumers use dist/, not source
-pnpm build
-
-# in your app
-npm install /path/to/spyglass/packages/sdk
-# or: yarn add file:/path/to/spyglass/packages/sdk
-# or: pnpm add /path/to/spyglass/packages/sdk
-```
-
-This creates a symlink into the spyglass repo. **Metro doesn't follow that
-by default** — it neither watches files outside your project root nor
-reliably resolves symlinked packages — so without extra config the bundler
-can fail to resolve `spyglass-react`, or resolve it once and never pick up
-a rebuilt `dist/`. Add this to your app's `metro.config.js`:
-
-```js
-const { getDefaultConfig } = require("expo/metro-config"); // bare RN: require("@react-native/metro-config")
-const path = require("path");
-
-const config = getDefaultConfig(__dirname);
-config.resolver.unstable_enableSymlinks = true;
-config.watchFolders = [path.resolve("/path/to/spyglass")];
-module.exports = config;
-```
-
-Once this package is published, none of this section applies — a plain
-`npm install spyglass-react` resolves normally and needs no Metro changes.
 
 ## Usage
 
@@ -57,21 +25,77 @@ init({ appName: "MyApp" });
 
 In dev-style environments this alone already gets you console logs, network
 requests and performance stalls — see "Auto-attached by default" below.
-Navigation and state/storage adapters need one more line each, since they
+Navigation, state and storage adapters need one more line each, since they
 depend on a reference (a navigation ref, a store instance, …) only your
-app's code has:
-
-```ts
-import { init } from "spyglass-react";
-import { attachNavigation } from "spyglass-react/navigation";
-import { createSpyglassReduxMiddleware } from "spyglass-react/state/redux";
-
-init({ appName: "MyApp" });
-```
+app's code has. Every adapter reads the connection `init()` set up, so
+`init()` has to run first — called before it, an adapter throws
+`[Spyglass] SDK not initialized`.
 
 No-ops safely with no reachable desktop app — the transport just keeps
 retrying in the background with backoff, so it's safe to leave `init()`
 in place across environments.
+
+### A complete example
+
+A React Native app wiring up React Navigation, Redux Toolkit and
+AsyncStorage — shown in the order the bundler evaluates the files, since
+that order is what makes `createSpyglassReduxMiddleware()` see an
+initialized SDK when the store is created.
+
+```ts
+// spyglass.ts — no exports; imported first, purely for its side effects
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { init } from "spyglass-react";
+import { attachAsyncStorage } from "spyglass-react/storage/async-storage";
+
+init({ appName: "MyApp" });
+attachAsyncStorage(AsyncStorage);
+```
+
+```ts
+// store.ts
+import { configureStore } from "@reduxjs/toolkit";
+import { createSpyglassReduxMiddleware } from "spyglass-react/state/redux";
+import { rootReducer } from "./rootReducer";
+
+export const store = configureStore({
+  reducer: rootReducer,
+  // Runs at store-creation time, i.e. while this module is being
+  // evaluated — so ./spyglass must be imported before this one.
+  middleware: (getDefault) => getDefault().concat(createSpyglassReduxMiddleware()),
+});
+```
+
+```tsx
+// App.tsx
+import "./spyglass"; // first import: init() runs before anything reaches for it
+import { useEffect } from "react";
+import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
+import { Provider } from "react-redux";
+import { attachNavigation } from "spyglass-react/navigation";
+import { RootStack } from "./RootStack";
+import { store } from "./store";
+
+export default function App() {
+  const navigationRef = useNavigationContainerRef();
+
+  useEffect(() => attachNavigation(navigationRef.current!), []);
+
+  return (
+    <Provider store={store}>
+      <NavigationContainer ref={navigationRef}>
+        <RootStack />
+      </NavigationContainer>
+    </Provider>
+  );
+}
+```
+
+Swap in whichever adapters your app actually uses — the call sites differ,
+the ordering rule doesn't. Two adapters are hooks rather than functions, so
+they attach from inside a component instead: `useSpyglassReactRouter()`
+under `<BrowserRouter>`, and `useSpyglassRecoil(atoms)` under
+`<RecoilRoot>`. See "Adapters" below for the full list.
 
 ### Auto-attached by default
 

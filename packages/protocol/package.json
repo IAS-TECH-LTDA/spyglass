@@ -1,6 +1,6 @@
 {
   "name": "spyglass-protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared message types and helpers for the Spyglass SDK <-> Desktop WebSocket protocol.",
   "type": "module",
   "main": "./dist/index.js",

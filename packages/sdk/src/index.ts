@@ -16,7 +16,7 @@ import { Transport } from "./transport/ws.js";
  * automatically, so a release that forgets to bump it fails `pnpm test`
  * instead of silently shipping a stale version string).
  */
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.1.1";
 
 export interface AutoAttachOptions {
   /** Defaults to the same dev-environment detection as `InitOptions.diagnostics`. */
@@ -97,9 +97,9 @@ export interface SpyglassHandle {
  * ```ts
  * import { init } from "spyglass-react";
  * import { attachNavigation } from "spyglass-react/navigation";
- * import { spyglassReduxEnhancer } from "spyglass-react/state/redux";
  *
  * init({ appName: "MyApp" });
+ * attachNavigation(navigationRef.current!);
  * ```
  *
  * No-ops safely in production-style environments with no reachable desktop:

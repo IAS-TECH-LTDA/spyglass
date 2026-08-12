@@ -22,7 +22,10 @@ monorepo of three pieces that talk over one wire protocol.
    built release once one exists).
 2. In your app:
    ```bash
+   # whichever your app already uses
    npm install --save-dev spyglass-react
+   yarn add --dev spyglass-react
+   pnpm add --save-dev spyglass-react
    ```
    ```ts
    import { init } from "spyglass-react";

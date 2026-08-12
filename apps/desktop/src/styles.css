@@ -1571,6 +1571,7 @@ th {
 
 .connect-view {
   flex: 1;
+  min-height: 0;
   display: flex;
   justify-content: center;
   overflow: auto;
@@ -1634,6 +1635,10 @@ th {
   background: transparent;
   padding: 0;
   white-space: pre;
+}
+
+.connect-code-multi {
+  align-items: flex-start;
 }
 
 .connect-scenarios {

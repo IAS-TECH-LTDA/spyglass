@@ -1,6 +1,6 @@
 {
   "name": "spyglass-react",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Instrumentation SDK for React Native and web apps. Streams navigation, state and storage events to the Spyglass desktop inspector.",
   "type": "module",
   "main": "./dist/index.js",
