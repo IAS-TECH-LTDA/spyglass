@@ -2532,3 +2532,106 @@ button.jgn-row {
   background: var(--accent);
   transition: width 0.2s ease;
 }
+
+/* Live-edit affordance (spec 0011): the dismissible explanation banner and
+   the permanent accent border applied to Storage/Stores/Queries/Memory's
+   editable containers. See components/LiveEditBanner.tsx's doc comment. */
+
+.live-edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.live-edit-banner-dismiss {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.live-edit-banner-dismiss:hover {
+  color: var(--text);
+}
+
+.live-edit-accent {
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+}
+
+.query-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.query-action-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.query-action-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.query-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.query-action-btn-remove {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.query-action-btn-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.network-related {
+  margin-top: 4px;
+}
+
+.network-related h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.network-related-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.network-related-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.network-related-chip:hover {
+  border-color: var(--accent);
+}

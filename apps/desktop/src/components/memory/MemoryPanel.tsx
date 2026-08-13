@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConnectionStore } from "../../state/connection";
 import type { PendingCacheClear } from "../../state/connection";
+import { LiveEditBanner } from "../LiveEditBanner";
 import {
   findSimulatorPid,
   listBootedSimulators,
@@ -89,17 +90,22 @@ function ClearCachesButton({ appId }: { appId: string }) {
   if (!canClear) return null;
 
   return (
-    <div className="memory-clear-caches">
-      <button
-        type="button"
-        className="memory-clear-caches-btn"
-        title="Runs the JS engine's garbage collector and, if the app uses expo-image, clears its image cache. Can't free memory system-wide — no third-party app can ask the OS for that."
-        disabled={latest?.status === "pending"}
-        onClick={() => sendClearCache(appId)}
-      >
-        Clear app caches
-      </button>
-      {latest?.status && <span className={`jgn-status-dot jgn-status-dot-${latest.status}`} title={latest.error ?? latest.status} />}
+    <div className="memory-clear-caches-wrap">
+      <LiveEditBanner noticeId="memory-clear-cache">
+        "Clear app caches" roda o coletor de lixo e limpa caches de imagem no app conectado agora.
+      </LiveEditBanner>
+      <div className="memory-clear-caches live-edit-accent">
+        <button
+          type="button"
+          className="memory-clear-caches-btn"
+          title="Runs the JS engine's garbage collector and, if the app uses expo-image, clears its image cache. Can't free memory system-wide — no third-party app can ask the OS for that."
+          disabled={latest?.status === "pending"}
+          onClick={() => sendClearCache(appId)}
+        >
+          Clear app caches
+        </button>
+        {latest?.status && <span className={`jgn-status-dot jgn-status-dot-${latest.status}`} title={latest.error ?? latest.status} />}
+      </div>
     </div>
   );
 }

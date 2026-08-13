@@ -4,6 +4,7 @@ import { useConnectionStore } from "../../state/connection";
 import { CopyButton } from "../../components/CopyButton";
 import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { toCurl } from "../../lib/curl";
+import { correlateNetworkEntry } from "../../lib/correlateNetworkEntry";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 
 /** Preferred display order for the most common verbs; anything else is appended alphabetically. */
@@ -138,16 +139,30 @@ export function NetworkView({ appId }: { appId: string }) {
       {/* Keyed by requestId so switching the selected request resets the
           accordion sections back to their default (open) state instead of
           carrying over whatever was collapsed for the previous one. */}
-      {selected && <NetworkDetail key={selected.requestId} entry={selected} />}
+      {selected && <NetworkDetail key={selected.requestId} appId={appId} entry={selected} />}
     </div>
   );
 }
 
-function NetworkDetail({ entry }: { entry: NetworkEntry }) {
+function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry }) {
   const requestBody = parseBody(entry.requestBody);
   const responseBody = parseBody(entry.responseBody);
   const [requestOpen, setRequestOpen] = useState(true);
   const [responseOpen, setResponseOpen] = useState(true);
+
+  const queries = useConnectionStore((s) => s.data[appId]?.queries ?? {});
+  const queriesMeta = useConnectionStore((s) => s.data[appId]?.queriesMeta ?? {});
+  const storage = useConnectionStore((s) => s.data[appId]?.storage ?? {});
+  const storageMeta = useConnectionStore((s) => s.data[appId]?.storageMeta ?? {});
+  const highlightAndNavigate = useConnectionStore((s) => s.highlightAndNavigate);
+
+  // Heuristic, best-effort (spec 0011) — see correlateNetworkEntry's doc
+  // comment for why an ambiguous match shows nothing rather than guessing.
+  const related = useMemo(
+    () => correlateNetworkEntry(entry, { queries, queriesMeta, storage, storageMeta }),
+    [entry, queries, queriesMeta, storage, storageMeta],
+  );
+  const hasRelated = related.queries.length > 0 || related.storage.length > 0;
 
   return (
     <section className="network-detail">
@@ -180,6 +195,34 @@ function NetworkDetail({ entry }: { entry: NetworkEntry }) {
         />
         <span className="network-curl-label">Copy as cURL</span>
       </div>
+
+      {hasRelated && (
+        <div className="network-related">
+          <h4>Related</h4>
+          <div className="network-related-chips">
+            {related.queries.map((q) => (
+              <button
+                key={q.queryHash}
+                type="button"
+                className="network-related-chip"
+                onClick={() => highlightAndNavigate({ tab: "queries", queryHash: q.queryHash })}
+              >
+                Query: {formatQueryKeyPreview(q.queryKey)}
+              </button>
+            ))}
+            {related.storage.map((s) => (
+              <button
+                key={`${s.engine}:${s.key}`}
+                type="button"
+                className="network-related-chip"
+                onClick={() => highlightAndNavigate({ tab: "storage", storageKey: { engine: s.engine, key: s.key } })}
+              >
+                Storage: {s.key} ({s.engine})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <NetworkSection
         title="Request"
@@ -266,6 +309,11 @@ function statusLabel(entry: NetworkEntry): string {
 /** HH:MM:SS the request started at — same clock-time shown in the list row and the detail panel's "Started" field. */
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour12: false });
+}
+
+/** One-line, human-readable rendering of a query key for the "Related" chips — same format as QueriesView's formatQueryKey. */
+function formatQueryKeyPreview(key: unknown[]): string {
+  return key.map((part) => (typeof part === "string" ? part : JSON.stringify(part))).join(", ");
 }
 
 /** Parses a JSON-string body into a real object so JsonGraph gets structured data either way. */

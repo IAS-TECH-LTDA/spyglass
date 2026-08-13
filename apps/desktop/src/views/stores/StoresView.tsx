@@ -5,6 +5,7 @@ import type { PendingStateWrite, StoreEntry } from "../../state/connection";
 import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import type { JsonGraphEditable } from "../../components/jsonGraph/JsonGraph";
 import { CopyButton } from "../../components/CopyButton";
+import { LiveEditBanner } from "../../components/LiveEditBanner";
 import { toJsonPointer } from "../../lib/jsonPointer";
 
 export function StoresView({ appId }: { appId: string }) {
@@ -116,11 +117,16 @@ function StoreStatePanel({
     : undefined;
 
   return (
-    <section className="store-state">
+    <section className={`store-state ${isEditable ? "live-edit-accent" : ""}`}>
       <div className="store-state-head">
         <h3>State</h3>
         <CopyButton size="sm" title="Copy state" text={() => JSON.stringify(entry.state, null, 2)} />
       </div>
+      {isEditable && (
+        <LiveEditBanner noticeId="stores-edit">
+          Editar um campo aqui grava imediatamente no store do app conectado (merge raso, não substitui o store inteiro).
+        </LiveEditBanner>
+      )}
       <JsonGraph data={entry.state} defaultExpandDepth={2} editable={editable} />
     </section>
   );

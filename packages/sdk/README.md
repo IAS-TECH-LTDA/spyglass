@@ -207,9 +207,9 @@ never need to install adapters you don't use.
 
 ## Live editing from the desktop
 
-Three things the desktop app can do to your *running* app, not just read
-from it — every one gated behind `allowRemoteWrites` (on by default in
-dev-style environments, **never** forced on in production, see
+Things the desktop app can do to your *running* app, not just read from it
+— every one gated behind `allowRemoteWrites` (on by default in dev-style
+environments, **never** forced on in production, see
 [`InitOptions`](#initoptions) below):
 
 | What | Where in the desktop | Requires | Capability advertised |
@@ -217,6 +217,8 @@ dev-style environments, **never** forced on in production, see
 | Edit a Storage KV value | Storage tab, click a field | `attachAsyncStorage`/`attachMmkv`/`attachWebStorage` (or the storage `autoAttach`) | `storage:write` |
 | Edit a Zustand store's state | Stores tab, click a field | `withSpyglass(...)` or `autoAttach.state.zustand` | `state:write` |
 | "Clear app caches" | Performance tab's Memory panel | nothing — always available once the gate is on | `memory:clear-cache` |
+| Edit a React Query's cached data | Queries tab, click the Data field | `attachReactQuery(queryClient)` | `query:write` |
+| Refetch / Invalidate / Reset / Remove a query | Queries tab's action toolbar | `attachReactQuery(queryClient)` | `query:write` |
 
 None of this needs new code beyond attaching the adapter you'd already want
 for the *read* side — editing reuses the exact same connection.
@@ -253,6 +255,21 @@ memory/swap) are a **desktop-only** feature — the numbers come from `adb`/
 `footprint` run by the desktop app itself, not from anything this SDK
 reports over the wire. There's nothing to attach or configure in your app
 for that half of the panel.
+
+**Query edits and commands route through your `QueryClient`'s own methods,
+not a bespoke code path.** Editing the Data field calls `setQueryData`;
+Refetch/Invalidate/Reset/Remove call `refetchQueries`/`invalidateQueries`/
+`resetQueries`/`removeQueries` — all addressed by the query's `queryHash`,
+resolved to its real (never-serialized) `queryKey` from your own cache, so
+this can't be tricked into hashing to the wrong query even if the value
+shown on the wire got truncated for display. Because every one of those
+calls is a normal React Query cache mutation, the result flows back out
+through the same subscription `attachReactQuery` already uses to stream
+query state — there's no separate confirmation path to keep in sync.
+**"Remove" can look like a no-op** if the query still has an active
+`useQuery` observer: React Query's own subscribed components immediately
+refetch it, and it reappears in the cache almost instantly. That's expected
+React Query behavior, not a bug in this channel.
 
 ## Connecting from a device
 

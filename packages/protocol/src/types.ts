@@ -42,6 +42,13 @@ export type MessageType =
   // has no target to address.
   | "memory/clear-cache"
   | "memory/clear-cache-result"
+  // Same direction/gating as storage/write, state/write and
+  // memory/clear-cache, for a React Query cache — see QueryWritePayload's
+  // and QueryCommandPayload's doc comments.
+  | "query/write"
+  | "query/write-result"
+  | "query/command"
+  | "query/command-result"
   | "log/entry"
   | "network/request"
   | "network/response"
@@ -94,6 +101,8 @@ export type Capability =
   | "state:write"
   /** Same as `storage:write`/`state:write`, for `memory/clear-cache` (spec 0008) — advertised whenever the shared inbound-commands channel is on. Unlike the other two, there's no per-resource registration to fail against: the handler is either present (`allowRemoteWrites` on) or the whole channel isn't wired up at all. */
   | "memory:clear-cache"
+  /** Same as `storage:write`/`state:write`, for `query/write` and `query/command` (spec 0010) — covers both under one capability, same risk category as `state:write` covering a store's whole state object. Advertised whenever the shared inbound-commands channel is on and `attachReactQuery` has registered its handlers. */
+  | "query:write"
   | "console"
   | "network"
   | "query:react-query"
@@ -398,6 +407,69 @@ export interface QueryChangePayload {
   query?: QueryInfo;
 }
 
+/**
+ * Desktop -> SDK: write a query's cached data from the desktop's `JsonGraph`
+ * editor into the real, connected app's React Query cache (spec 0010).
+ * Addressed by `queryHash`, deliberately never `queryKey` — `QueryInfo.queryKey`
+ * on the wire already passed through `safeSerialize` (see `toQueryInfo` in
+ * `spyglass-react/query/react-query`), which can normalize/truncate values
+ * (e.g. a `Date` becomes an ISO string, an over-deep object becomes a
+ * `TruncatedValue`). Reconstructing a `queryKey` from that and sending it
+ * back would risk hashing to a *different* query than the one the user
+ * actually edited. `queryHash` is a plain, short string that never goes
+ * through that lossy path, so the SDK side resolves the real, live
+ * `queryKey` by looking the query up in its own cache by hash, then uses
+ * that reference — never anything reconstructed from this payload.
+ */
+export interface QueryWritePayload {
+  requestId: string;
+  queryHash: string;
+  data: unknown;
+}
+
+export type QueryWriteErrorCode =
+  /** No `attachReactQuery` has registered a handler at all. */
+  | "no-adapter"
+  /** A handler is registered, but no query with this hash exists in its cache right now. */
+  | "no-query"
+  /** `setQueryData` itself threw. */
+  | "engine-error";
+
+export interface QueryWriteResultPayload {
+  requestId: string;
+  ok: boolean;
+  errorCode?: QueryWriteErrorCode;
+  error?: string;
+}
+
+/**
+ * Desktop -> SDK: trigger one of React Query's own cache lifecycle actions
+ * for a single query, from the desktop's Queries tab (spec 0010) — the
+ * "control the tool's own primitives, not just what the app's code
+ * happens to call" request. Same `queryHash`-addressing rationale as
+ * `QueryWritePayload`. `"remove"` in particular can appear to do nothing if
+ * the query still has active observers (`QueryInfo.observersCount > 0`):
+ * React Query's own subscribed components immediately trigger a refetch
+ * that repopulates the cache — that's expected React Query behavior, not a
+ * bug in this channel.
+ */
+export type QueryCommandKind = "refetch" | "invalidate" | "reset" | "remove";
+
+export interface QueryCommandPayload {
+  requestId: string;
+  queryHash: string;
+  command: QueryCommandKind;
+}
+
+export type QueryCommandErrorCode = "no-adapter" | "no-query" | "engine-error";
+
+export interface QueryCommandResultPayload {
+  requestId: string;
+  ok: boolean;
+  errorCode?: QueryCommandErrorCode;
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Performance (JS-thread frame timing)
 // ---------------------------------------------------------------------------
@@ -497,6 +569,10 @@ export interface PayloadByType {
   "state/write-result": StateWriteResultPayload;
   "memory/clear-cache": MemoryClearCachePayload;
   "memory/clear-cache-result": MemoryClearCacheResultPayload;
+  "query/write": QueryWritePayload;
+  "query/write-result": QueryWriteResultPayload;
+  "query/command": QueryCommandPayload;
+  "query/command-result": QueryCommandResultPayload;
   "log/entry": LogEntryPayload;
   "network/request": NetworkRequestPayload;
   "network/response": NetworkResponsePayload;

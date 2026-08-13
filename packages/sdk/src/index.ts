@@ -276,6 +276,12 @@ export function init(options: InitOptions): SpyglassHandle {
     // there's no "target" to be missing for memory/clear-cache (spec 0008),
     // so this is really just announcing that the inbound channel is on.
     capabilities.add("memory:clear-cache");
+    // Same reasoning again, for query/write + query/command (spec 0010) —
+    // one capability covers both, same as state:write covering a store's
+    // whole state object. Whether attachReactQuery has actually run yet is
+    // a separate question the write/command themselves answer via
+    // errorCode: "no-adapter".
+    capabilities.add("query:write");
     disableInboundCommands = enableInboundCommands(getCore());
   }
 

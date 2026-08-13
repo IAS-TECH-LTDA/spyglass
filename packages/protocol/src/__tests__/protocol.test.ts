@@ -28,6 +28,22 @@ describe("envelope", () => {
     const result = createEnvelope("storage/write-result", "app-1", { requestId: "req-1", ok: true });
     expect(decodeEnvelope(encodeEnvelope(result))).toEqual(result);
   });
+
+  it("round-trips the query/write and query/write-result pair (spec 0010)", () => {
+    const write = createEnvelope("query/write", "app-1", { requestId: "req-1", queryHash: "hash-1", data: { n: 5 } });
+    expect(decodeEnvelope(encodeEnvelope(write))).toEqual(write);
+
+    const result = createEnvelope("query/write-result", "app-1", { requestId: "req-1", ok: true });
+    expect(decodeEnvelope(encodeEnvelope(result))).toEqual(result);
+  });
+
+  it("round-trips the query/command and query/command-result pair (spec 0010)", () => {
+    const command = createEnvelope("query/command", "app-1", { requestId: "req-1", queryHash: "hash-1", command: "invalidate" });
+    expect(decodeEnvelope(encodeEnvelope(command))).toEqual(command);
+
+    const result = createEnvelope("query/command-result", "app-1", { requestId: "req-1", ok: false, errorCode: "no-query", error: "nope" });
+    expect(decodeEnvelope(encodeEnvelope(result))).toEqual(result);
+  });
 });
 
 describe("diffValues", () => {

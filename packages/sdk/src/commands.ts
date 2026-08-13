@@ -2,6 +2,11 @@ import { createEnvelope } from "spyglass-protocol";
 import type {
   MemoryClearCacheErrorCode,
   MemoryClearCacheResultPayload,
+  QueryCommandErrorCode,
+  QueryCommandKind,
+  QueryCommandResultPayload,
+  QueryWriteErrorCode,
+  QueryWriteResultPayload,
   StateWriteErrorCode,
   StateWriteResultPayload,
   StorageEngine,
@@ -13,13 +18,13 @@ import type { SpyglassCore } from "./core.js";
 import { clearCaches } from "./memoryClear.js";
 
 /**
- * Inbound command handling (spec 0007, spec 0007-state, spec 0008) — the
- * SDK's three Desktop -> SDK directions (storage KV writes, state-manager
- * writes, and clearing the app's own caches). Everything here is only ever
- * wired up when `init()`'s `allowRemoteWrites` gate is on (dev-only by
- * default); see `index.ts`. Kept in its own module so that gate is a
- * single call to `enableInboundCommands()`, not something scattered across
- * every adapter.
+ * Inbound command handling (spec 0007, spec 0007-state, spec 0008, spec
+ * 0010) — the SDK's Desktop -> SDK directions (storage KV writes,
+ * state-manager writes, clearing the app's own caches, and React Query
+ * cache writes/commands). Everything here is only ever wired up when
+ * `init()`'s `allowRemoteWrites` gate is on (dev-only by default); see
+ * `index.ts`. Kept in its own module so that gate is a single call to
+ * `enableInboundCommands()`, not something scattered across every adapter.
  */
 
 export type StorageWriteHandler = (op: StorageWriteOp, key: string, value: unknown) => void | Promise<void>;
@@ -27,12 +32,20 @@ export type StorageWriteHandler = (op: StorageWriteOp, key: string, value: unkno
 /** @see StateWritePayload's doc comment (packages/protocol) for why this is a shallow-merge contract, not a replace. */
 export type StateWriteHandler = (nextState: unknown) => void | Promise<void>;
 
+/** @see QueryWritePayload's doc comment (packages/protocol) for why this is addressed by queryHash, never queryKey. */
+export type QueryWriteHandler = (queryHash: string, data: unknown) => void | Promise<void>;
+
+/** @see QueryCommandPayload's doc comment (packages/protocol). */
+export type QueryCommandHandler = (queryHash: string, command: QueryCommandKind) => void | Promise<void>;
+
 function storageHandlerKey(engine: StorageEngine, dbName: string | undefined): string {
   return `${engine}::${dbName ?? ""}`;
 }
 
 const storageWriteHandlers = new Map<string, StorageWriteHandler>();
 const stateWriteHandlers = new Map<string, StateWriteHandler>();
+let queryWriteHandler: QueryWriteHandler | undefined;
+let queryCommandHandler: QueryCommandHandler | undefined;
 
 /**
  * @internal Called by a storage adapter (`attachAsyncStorage`,
@@ -67,6 +80,39 @@ export function registerStateWriteHandler(storeId: string, handler: StateWriteHa
   stateWriteHandlers.set(storeId, handler);
 }
 
+/**
+ * Thrown by a `QueryWriteHandler`/`QueryCommandHandler` to signal "no query
+ * with this hash exists right now" — distinct from any other throw, which
+ * `enableInboundCommands` reports as `errorCode: "engine-error"` instead of
+ * `"no-query"`.
+ */
+export class QueryNotFoundError extends Error {}
+
+/**
+ * @internal Called by `attachReactQuery` at attach time. Unlike storage
+ * adapters (possibly several, keyed by engine/dbName) there's only ever one
+ * query client per app, so this is a single module-level slot rather than a
+ * map. Unlike `registerStateWriteHandler`, `attachReactQuery` already has a
+ * real detach path (it returns an unsubscribe), so this — like storage's
+ * registration — returns an unregister that only clears the slot if it's
+ * still pointing at this exact handler, so a second `attachReactQuery()`
+ * call's detach can't evict a newer registration.
+ */
+export function registerQueryWriteHandler(handler: QueryWriteHandler): () => void {
+  queryWriteHandler = handler;
+  return () => {
+    if (queryWriteHandler === handler) queryWriteHandler = undefined;
+  };
+}
+
+/** @internal Same registration discipline as `registerQueryWriteHandler`, for the four React Query lifecycle commands. */
+export function registerQueryCommandHandler(handler: QueryCommandHandler): () => void {
+  queryCommandHandler = handler;
+  return () => {
+    if (queryCommandHandler === handler) queryCommandHandler = undefined;
+  };
+}
+
 function replyStorage(core: SpyglassCore, requestId: string, ok: boolean, errorCode?: StorageWriteErrorCode, error?: string): void {
   const payload: StorageWriteResultPayload = { requestId, ok };
   if (errorCode !== undefined) payload.errorCode = errorCode;
@@ -86,6 +132,20 @@ function replyMemory(core: SpyglassCore, requestId: string, ok: boolean, errorCo
   if (errorCode !== undefined) payload.errorCode = errorCode;
   if (error !== undefined) payload.error = error;
   core.transport.send(createEnvelope("memory/clear-cache-result", core.appId, payload));
+}
+
+function replyQueryWrite(core: SpyglassCore, requestId: string, ok: boolean, errorCode?: QueryWriteErrorCode, error?: string): void {
+  const payload: QueryWriteResultPayload = { requestId, ok };
+  if (errorCode !== undefined) payload.errorCode = errorCode;
+  if (error !== undefined) payload.error = error;
+  core.transport.send(createEnvelope("query/write-result", core.appId, payload));
+}
+
+function replyQueryCommand(core: SpyglassCore, requestId: string, ok: boolean, errorCode?: QueryCommandErrorCode, error?: string): void {
+  const payload: QueryCommandResultPayload = { requestId, ok };
+  if (errorCode !== undefined) payload.errorCode = errorCode;
+  if (error !== undefined) payload.error = error;
+  core.transport.send(createEnvelope("query/command-result", core.appId, payload));
 }
 
 /**
@@ -135,6 +195,48 @@ export function enableInboundCommands(core: SpyglassCore): () => void {
           .then(
             () => replyState(core, p.requestId, true),
             (err: unknown) => replyState(core, p.requestId, false, "engine-error", err instanceof Error ? err.message : String(err)),
+          );
+        return;
+      }
+      case "query/write": {
+        const p = envelope.payload;
+        if (!queryWriteHandler) {
+          replyQueryWrite(core, p.requestId, false, "no-adapter", "No attached React Query client.");
+          return;
+        }
+        Promise.resolve()
+          .then(() => queryWriteHandler!(p.queryHash, p.data))
+          .then(
+            () => replyQueryWrite(core, p.requestId, true),
+            (err: unknown) =>
+              replyQueryWrite(
+                core,
+                p.requestId,
+                false,
+                err instanceof QueryNotFoundError ? "no-query" : "engine-error",
+                err instanceof Error ? err.message : String(err),
+              ),
+          );
+        return;
+      }
+      case "query/command": {
+        const p = envelope.payload;
+        if (!queryCommandHandler) {
+          replyQueryCommand(core, p.requestId, false, "no-adapter", "No attached React Query client.");
+          return;
+        }
+        Promise.resolve()
+          .then(() => queryCommandHandler!(p.queryHash, p.command))
+          .then(
+            () => replyQueryCommand(core, p.requestId, true),
+            (err: unknown) =>
+              replyQueryCommand(
+                core,
+                p.requestId,
+                false,
+                err instanceof QueryNotFoundError ? "no-query" : "engine-error",
+                err instanceof Error ? err.message : String(err),
+              ),
           );
         return;
       }

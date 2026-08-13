@@ -8,6 +8,7 @@ import type { JsonGraphEditable } from "../../components/jsonGraph/JsonGraph";
 import { CopyButton } from "../../components/CopyButton";
 import { toJsonPointer } from "../../lib/jsonPointer";
 import { useResizableWidth } from "../../lib/useResizableWidth";
+import { LiveEditBanner } from "../../components/LiveEditBanner";
 import { SchemaDiagram } from "./SchemaDiagram";
 import { inferForeignKeys } from "./inferForeignKeys";
 
@@ -35,6 +36,23 @@ export function StorageView({ appId }: { appId: string }) {
   // — absent means either a production build, or an SDK version that
   // predates this feature. Either way, editing simply isn't offered.
   const canWrite = useConnectionStore((s) => s.apps[appId]?.capabilities.includes("storage:write") ?? false);
+
+  // Consumes a "jump here from Network" request (spec 0011) exactly once —
+  // switches to the target engine and pulses the matching KV row. See
+  // QueriesView's identical consumer for the query-side counterpart.
+  const pendingHighlight = useConnectionStore((s) => s.pendingHighlight);
+  const clearPendingHighlight = useConnectionStore((s) => s.clearPendingHighlight);
+  const [highlightKey, setHighlightKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const target = pendingHighlight?.tab === "storage" ? pendingHighlight.storageKey : undefined;
+    if (!target || !storage[target.engine]) return;
+    setSelectedEngine(target.engine);
+    setHighlightKey(target.key);
+    clearPendingHighlight();
+    const timer = setTimeout(() => setHighlightKey(null), 1800);
+    return () => clearTimeout(timer);
+  }, [pendingHighlight, storage, clearPendingHighlight]);
 
   const activeEngine = selectedEngine && storage[selectedEngine] ? selectedEngine : engines[0];
   const snapshot = activeEngine ? storage[activeEngine] : undefined;
@@ -79,6 +97,7 @@ export function StorageView({ appId }: { appId: string }) {
           dbName={snapshot.dbName}
           entries={snapshot.entries}
           canWrite={canWrite}
+          highlightKey={highlightKey}
         />
       )}
       {snapshot?.schema && snapshot.rows && <RelationalStorage schema={snapshot.schema} rows={snapshot.rows} />}
@@ -92,19 +111,32 @@ function KvTable({
   dbName,
   entries,
   canWrite,
+  highlightKey,
 }: {
   appId: string;
   engine: StorageEngine;
   dbName?: string;
   entries: { key: string; value: unknown }[];
   canWrite: boolean;
+  highlightKey?: string | null;
 }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+
+  // A highlighted row auto-expands, same as clicking it — otherwise the
+  // pulse would land on a collapsed summary row with nothing to see.
+  useEffect(() => {
+    if (highlightKey) setExpandedKey(highlightKey);
+  }, [highlightKey]);
 
   if (entries.length === 0) return <div className="view-empty">Empty.</div>;
 
   return (
     <div className="table-rows">
+      {canWrite && (
+        <LiveEditBanner noticeId="storage-edit">
+          Editar um valor aqui grava imediatamente na storage do app conectado.
+        </LiveEditBanner>
+      )}
       <table className="data-table">
         <thead>
           <tr>
@@ -126,6 +158,7 @@ function KvTable({
                 open={isOpen}
                 onToggle={() => setExpandedKey(isOpen ? null : entry.key)}
                 canWrite={canWrite}
+                highlighted={entry.key === highlightKey}
               />
             );
           })}
@@ -143,6 +176,7 @@ function KvRow({
   open,
   onToggle,
   canWrite,
+  highlighted,
 }: {
   appId: string;
   engine: StorageEngine;
@@ -151,6 +185,7 @@ function KvRow({
   open: boolean;
   onToggle: () => void;
   canWrite: boolean;
+  highlighted?: boolean;
 }) {
   const sendStorageWrite = useConnectionStore((s) => s.sendStorageWrite);
   const pendingWrites = useConnectionStore((s) => s.data[appId]?.pendingWrites);
@@ -206,6 +241,7 @@ function KvRow({
       open={open}
       onToggle={onToggle}
       colSpan={2}
+      highlighted={highlighted}
       summaryCells={
         <>
           <td className="kv-key">{entry.key}</td>
@@ -213,7 +249,7 @@ function KvRow({
         </>
       }
     >
-      <div className="row-detail-head">
+      <div className={`row-detail-head ${canWrite ? "live-edit-accent" : ""}`}>
         <span>{entry.key}</span>
         {canWrite && (
           <button type="button" className="kv-raw-toggle" onClick={() => (rawMode ? setRawMode(false) : openRawEditor())}>
@@ -393,16 +429,18 @@ function RowGroup({
   summaryCells,
   children,
   colSpan,
+  highlighted,
 }: {
   open: boolean;
   onToggle: () => void;
   summaryCells: React.ReactNode;
   children: React.ReactNode;
   colSpan: number;
+  highlighted?: boolean;
 }) {
   return (
     <>
-      <tr className="data-row" onClick={onToggle}>
+      <tr className={`data-row ${highlighted ? "row-highlighted" : ""}`} onClick={onToggle}>
         <td className="row-toggle-cell">
           <span className={`jt-toggle ${open ? "open" : ""}`}>▸</span>
         </td>

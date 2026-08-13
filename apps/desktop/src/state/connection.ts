@@ -6,6 +6,7 @@ import type {
   LogLevel,
   NavStatePayload,
   NavTransitionPayload,
+  QueryCommandKind,
   QueryInfo,
   StateActionPayload,
   StorageEngine,
@@ -17,6 +18,13 @@ import type { AppInfo } from "../ipc";
 import { sendToApp } from "../ipc";
 
 export type Tab = "graph" | "stores" | "storage" | "queries" | "logs" | "network" | "performance";
+
+/** @see ConnectionState.pendingHighlight */
+export interface PendingHighlight {
+  tab: Tab;
+  queryHash?: string;
+  storageKey?: { engine: StorageEngine; key: string };
+}
 
 /** Which tab shows alert-worthy events of each kind — used to decide when a new one counts as "unseen". */
 const TAB_FOR_ALERT_KIND: Record<"log" | "network", Tab> = { log: "logs", network: "network" };
@@ -212,6 +220,44 @@ export interface PendingCacheClear {
   error?: string;
 }
 
+/**
+ * One in-flight (or just-resolved) `query/write` sent from the desktop's
+ * `JsonGraph` editor to a connected app's React Query cache (spec 0010),
+ * keyed by `requestId` in `AppData.pendingQueryWrites`. Same shape/lifecycle
+ * as `PendingStateWrite`, same reason for no `"superseded"` status: `query/
+ * change` carries no `requestId` to correlate against, so this only ever
+ * resolves via its own `query/write-result` ack, the shared timeout, or
+ * disconnect.
+ */
+export interface PendingQueryWrite {
+  requestId: string;
+  queryHash: string;
+  data: unknown;
+  sentAt: number;
+  status: "pending" | "applied" | "failed";
+  error?: string;
+}
+
+/**
+ * One in-flight (or just-resolved) `query/command` (refetch/invalidate/
+ * reset/remove) sent from the Queries tab's action toolbar (spec 0010),
+ * keyed by `requestId` in `AppData.pendingQueryCommands`. Same
+ * shape/lifecycle/reasoning as `PendingQueryWrite`.
+ */
+export interface PendingQueryCommand {
+  requestId: string;
+  queryHash: string;
+  command: QueryCommandKind;
+  sentAt: number;
+  status: "pending" | "applied" | "failed";
+  error?: string;
+}
+
+/** @see AppData.queriesMeta */
+export interface QueryMeta {
+  lastChangedAt: number;
+}
+
 /** Structural base shared by `PendingWrite`/`PendingStateWrite`/`PendingCacheClear` — enough for the generic helpers below (`failAllPending`, the applied-clear sweep) to operate on any of the three maps without knowing their full shape. */
 interface PendingBase {
   status: string;
@@ -243,6 +289,21 @@ export interface AppData {
   pendingStateWrites: Record<string, PendingStateWrite>;
   /** In-flight/just-resolved `memory/clear-cache`s, keyed by `requestId` — see `PendingCacheClear`. */
   pendingCacheClears: Record<string, PendingCacheClear>;
+  /** In-flight/just-resolved `query/write`s, keyed by `requestId` — see `PendingQueryWrite`. */
+  pendingQueryWrites: Record<string, PendingQueryWrite>;
+  /** In-flight/just-resolved `query/command`s, keyed by `requestId` — see `PendingQueryCommand`. */
+  pendingQueryCommands: Record<string, PendingQueryCommand>;
+  /**
+   * Desktop-only bookkeeping (spec 0011) — `query/change`'s `envelope.ts`
+   * (device clock), kept alongside `queries` rather than added to `QueryInfo`
+   * itself, since the latter is a wire type mirrored 1:1 from the SDK.
+   * Feeds `correlateNetworkEntry`'s timing signal; not persisted across
+   * reconnects (nothing here survives a desktop reload any more than the
+   * rest of the session's live state does).
+   */
+  queriesMeta: Record<string /* queryHash */, QueryMeta>;
+  /** Same idea as `queriesMeta`, for `storage/change`, keyed by engine then KV key. */
+  storageMeta: Partial<Record<StorageEngine, Record<string, number>>>;
 }
 
 interface ConnectionState {
@@ -255,12 +316,24 @@ interface ConnectionState {
    * for the selected app, not just which app is selected.
    */
   activeTab: Tab;
+  /**
+   * Set by `NetworkView`'s "Related" chips (spec 0011, `correlateNetworkEntry`)
+   * when the user jumps from a network request to the query/storage key
+   * that heuristically produced it — `QueriesView`/`StorageView` consume
+   * this once (select + pulse-highlight the target) and clear it via
+   * `clearPendingHighlight`, so it never survives to a later, unrelated
+   * visit to that tab.
+   */
+  pendingHighlight: PendingHighlight | null;
 
   upsertApp(app: AppInfo): void;
   markDisconnected(appId: string): void;
   removeApp(appId: string): void;
   selectApp(appId: string | null): void;
   setActiveTab(tab: Tab): void;
+  /** Switches to `target.tab` and records what to select/highlight there once — see `pendingHighlight`'s doc comment. */
+  highlightAndNavigate(target: PendingHighlight): void;
+  clearPendingHighlight(): void;
   handleEnvelope(envelope: AnyEnvelope): void;
   hydrateFromCache(appId: string, envelopes: AnyEnvelope[]): void;
   /**
@@ -311,6 +384,23 @@ interface ConnectionState {
    * `MemoryClearCachePayload`'s doc comment in `spyglass-protocol`.
    */
   sendClearCache(appId: string): void;
+  /**
+   * Sends a whole-data write down to `appId`'s connected app for one React
+   * Query cache entry (spec 0010) and tracks it in
+   * `AppData.pendingQueryWrites` through to resolution — same
+   * never-optimistic contract as `sendStorageWrite`/`sendStateWrite`.
+   * Addressed by `queryHash`, never `queryKey` — see `QueryWritePayload`'s
+   * doc comment in `spyglass-protocol` for why.
+   */
+  sendQueryWrite(appId: string, queryHash: string, data: unknown): void;
+  /**
+   * Sends a React Query lifecycle command (refetch/invalidate/reset/remove)
+   * down to `appId`'s connected app for one query (spec 0010) and tracks it
+   * in `AppData.pendingQueryCommands` through to resolution. No value to
+   * guard against truncation — this carries no data, only a target and a
+   * verb.
+   */
+  sendQueryCommand(appId: string, queryHash: string, command: QueryCommandKind): void;
 }
 
 const MAX_ACTION_LOG = 200;
@@ -334,6 +424,10 @@ function emptyAppData(): AppData {
     pendingWrites: {},
     pendingStateWrites: {},
     pendingCacheClears: {},
+    pendingQueryWrites: {},
+    pendingQueryCommands: {},
+    queriesMeta: {},
+    storageMeta: {},
   };
 }
 
@@ -404,6 +498,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   selectedAppId: null,
   data: {},
   activeTab: "graph",
+  pendingHighlight: null,
 
   upsertApp(app) {
     set((s) => {
@@ -453,6 +548,8 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
               pendingWrites: failAllPending(appData.pendingWrites, "App disconnected"),
               pendingStateWrites: failAllPending(appData.pendingStateWrites, "App disconnected"),
               pendingCacheClears: failAllPending(appData.pendingCacheClears, "App disconnected"),
+              pendingQueryWrites: failAllPending(appData.pendingQueryWrites, "App disconnected"),
+              pendingQueryCommands: failAllPending(appData.pendingQueryCommands, "App disconnected"),
             },
           }
         : s.data;
@@ -491,6 +588,15 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     });
   },
 
+  highlightAndNavigate(target) {
+    set({ pendingHighlight: target });
+    get().setActiveTab(target.tab);
+  },
+
+  clearPendingHighlight() {
+    set({ pendingHighlight: null });
+  },
+
   recordAlert(appId, kind) {
     set((s) => {
       const alreadyVisible = s.selectedAppId === appId && s.activeTab === TAB_FOR_ALERT_KIND[kind];
@@ -513,6 +619,8 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     const prevPendingWrites = prevData?.pendingWrites ?? {};
     const prevPendingStateWrites = prevData?.pendingStateWrites ?? {};
     const prevPendingCacheClears = prevData?.pendingCacheClears ?? {};
+    const prevPendingQueryWrites = prevData?.pendingQueryWrites ?? {};
+    const prevPendingQueryCommands = prevData?.pendingQueryCommands ?? {};
 
     set((s) => {
       const appData = s.data[appId] ?? emptyAppData();
@@ -564,6 +672,32 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           if (!appData || !current || current.status !== "applied") return s;
           const { [requestId]: _cleared, ...rest } = appData.pendingCacheClears;
           return { data: { ...s.data, [appId]: { ...appData, pendingCacheClears: rest } } };
+        });
+      }, 1200);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
+
+    for (const requestId of newlyApplied(prevPendingQueryWrites, nextData.pendingQueryWrites)) {
+      const timer = setTimeout(() => {
+        set((s) => {
+          const appData = s.data[appId];
+          const current = appData?.pendingQueryWrites[requestId];
+          if (!appData || !current || current.status !== "applied") return s;
+          const { [requestId]: _cleared, ...rest } = appData.pendingQueryWrites;
+          return { data: { ...s.data, [appId]: { ...appData, pendingQueryWrites: rest } } };
+        });
+      }, 1200);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
+
+    for (const requestId of newlyApplied(prevPendingQueryCommands, nextData.pendingQueryCommands)) {
+      const timer = setTimeout(() => {
+        set((s) => {
+          const appData = s.data[appId];
+          const current = appData?.pendingQueryCommands[requestId];
+          if (!appData || !current || current.status !== "applied") return s;
+          const { [requestId]: _cleared, ...rest } = appData.pendingQueryCommands;
+          return { data: { ...s.data, [appId]: { ...appData, pendingQueryCommands: rest } } };
         });
       }, 1200);
       (timer as unknown as { unref?: () => void }).unref?.();
@@ -704,6 +838,96 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   },
 
+  sendQueryWrite(appId, queryHash, data) {
+    const requestId = `qw_${Math.random().toString(36).slice(2, 10)}`;
+    const pending: PendingQueryWrite = { requestId, queryHash, data, sentAt: Date.now(), status: "pending" };
+
+    set((s) => {
+      const appData = s.data[appId] ?? emptyAppData();
+      return {
+        data: { ...s.data, [appId]: { ...appData, pendingQueryWrites: { ...appData.pendingQueryWrites, [requestId]: pending } } },
+      };
+    });
+
+    const fail = (error: string) => {
+      set((s) => {
+        const appData = s.data[appId];
+        const current = appData?.pendingQueryWrites[requestId];
+        if (!appData || !current || current.status !== "pending") return s;
+        return {
+          data: {
+            ...s.data,
+            [appId]: {
+              ...appData,
+              pendingQueryWrites: { ...appData.pendingQueryWrites, [requestId]: { ...current, status: "failed", error } },
+            },
+          },
+        };
+      });
+    };
+
+    // See the matching guard in sendStorageWrite/sendStateWrite — same reasoning.
+    if (containsTruncatedValue(data)) {
+      fail("This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.");
+      return;
+    }
+
+    const envelope = createEnvelope("query/write", appId, { requestId, queryHash, data });
+    sendToApp(envelope)
+      .then(() => {
+        const timer = setTimeout(
+          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          STORAGE_WRITE_TIMEOUT_MS,
+        );
+        (timer as unknown as { unref?: () => void }).unref?.();
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
+  },
+
+  sendQueryCommand(appId, queryHash, command) {
+    const requestId = `qc_${Math.random().toString(36).slice(2, 10)}`;
+    const pending: PendingQueryCommand = { requestId, queryHash, command, sentAt: Date.now(), status: "pending" };
+
+    set((s) => {
+      const appData = s.data[appId] ?? emptyAppData();
+      return {
+        data: {
+          ...s.data,
+          [appId]: { ...appData, pendingQueryCommands: { ...appData.pendingQueryCommands, [requestId]: pending } },
+        },
+      };
+    });
+
+    const fail = (error: string) => {
+      set((s) => {
+        const appData = s.data[appId];
+        const current = appData?.pendingQueryCommands[requestId];
+        if (!appData || !current || current.status !== "pending") return s;
+        return {
+          data: {
+            ...s.data,
+            [appId]: {
+              ...appData,
+              pendingQueryCommands: { ...appData.pendingQueryCommands, [requestId]: { ...current, status: "failed", error } },
+            },
+          },
+        };
+      });
+    };
+
+    // No value to guard here (unlike sendQueryWrite) — query/command carries only a target and a verb.
+    const envelope = createEnvelope("query/command", appId, { requestId, queryHash, command });
+    sendToApp(envelope)
+      .then(() => {
+        const timer = setTimeout(
+          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          STORAGE_WRITE_TIMEOUT_MS,
+        );
+        (timer as unknown as { unref?: () => void }).unref?.();
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
+  },
+
   hydrateFromCache(_appId, envelopes) {
     // Cached envelopes may arrive out of order relative to `type`; apply
     // full-snapshot types first so a later single-entry diff/change for the
@@ -818,14 +1042,27 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
         }
       }
 
+      // Bookkeeping for the Network↔Storage correlation heuristic (spec
+      // 0011, correlateNetworkEntry.ts) — `envelope.ts` (device clock) is
+      // already available here, just never persisted before now.
+      const storageMeta =
+        p.key !== undefined
+          ? {
+              ...appData.storageMeta,
+              [p.engine]: { ...appData.storageMeta[p.engine], [p.key]: envelope.ts },
+            }
+          : appData.storageMeta;
+
       if (!existing?.entries || p.key === undefined) {
-        return pendingWrites === appData.pendingWrites ? appData : { ...appData, pendingWrites };
+        return pendingWrites === appData.pendingWrites && storageMeta === appData.storageMeta
+          ? appData
+          : { ...appData, pendingWrites, storageMeta };
       }
 
       const entries = existing.entries.filter((e) => e.key !== p.key);
       if (p.changeType !== "remove") entries.push({ key: p.key, value: p.value });
 
-      return { ...appData, storage: { ...appData.storage, [p.engine]: { ...existing, entries } }, pendingWrites };
+      return { ...appData, storage: { ...appData.storage, [p.engine]: { ...existing, entries } }, pendingWrites, storageMeta };
     }
 
     case "storage/write-result": {
@@ -867,6 +1104,32 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
       };
     }
 
+    case "query/write-result": {
+      const p = envelope.payload;
+      const current = appData.pendingQueryWrites[p.requestId];
+      if (!current) return appData; // unknown/stale requestId — ignore, not an error
+      return {
+        ...appData,
+        pendingQueryWrites: {
+          ...appData.pendingQueryWrites,
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+        },
+      };
+    }
+
+    case "query/command-result": {
+      const p = envelope.payload;
+      const current = appData.pendingQueryCommands[p.requestId];
+      if (!current) return appData; // unknown/stale requestId — ignore, not an error
+      return {
+        ...appData,
+        pendingQueryCommands: {
+          ...appData.pendingQueryCommands,
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+        },
+      };
+    }
+
     case "query/snapshot": {
       const p = envelope.payload;
       if (!Array.isArray(p.queries)) return appData; // malformed payload — keep whatever queries we already have
@@ -877,12 +1140,16 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
 
     case "query/change": {
       const p = envelope.payload;
+      // Bookkeeping for the Network↔Queries correlation heuristic (spec
+      // 0011, correlateNetworkEntry.ts) — kept even on "removed" (it's a
+      // "when did this last change" history, not "does it exist now").
+      const queriesMeta = { ...appData.queriesMeta, [p.queryHash]: { lastChangedAt: envelope.ts } };
       if (p.changeType === "removed") {
         const { [p.queryHash]: _removed, ...queries } = appData.queries;
-        return { ...appData, queries };
+        return { ...appData, queries, queriesMeta };
       }
       if (!p.query) return appData;
-      return { ...appData, queries: { ...appData.queries, [p.queryHash]: p.query } };
+      return { ...appData, queries: { ...appData.queries, [p.queryHash]: p.query }, queriesMeta };
     }
 
     case "log/entry": {

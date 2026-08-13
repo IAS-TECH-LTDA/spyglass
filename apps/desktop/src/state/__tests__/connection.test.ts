@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createEnvelope } from "spyglass-protocol";
-import { useConnectionStore, type AppData, type PendingCacheClear, type PendingStateWrite, type PendingWrite } from "../connection";
+import {
+  useConnectionStore,
+  type AppData,
+  type PendingCacheClear,
+  type PendingQueryCommand,
+  type PendingQueryWrite,
+  type PendingStateWrite,
+  type PendingWrite,
+} from "../connection";
 import type { AppInfo } from "../../ipc";
 
 const APP_ID = "app-1";
@@ -93,6 +101,54 @@ function seedAppWithPendingCacheClear(clear: PendingCacheClear): void {
   }));
 }
 
+function pendingQueryWrite(overrides: Partial<PendingQueryWrite> = {}): PendingQueryWrite {
+  return {
+    requestId: "qwreq-1",
+    queryHash: "hash-1",
+    data: { n: 5 },
+    sentAt: Date.now(),
+    status: "pending",
+    ...overrides,
+  };
+}
+
+function seedAppWithPendingQueryWrite(write: PendingQueryWrite): void {
+  useConnectionStore.setState((s) => ({
+    apps: { ...s.apps, [APP_ID]: fakeAppInfo() },
+    data: {
+      ...s.data,
+      [APP_ID]: {
+        ...emptyAppDataFor(APP_ID),
+        pendingQueryWrites: { [write.requestId]: write },
+      },
+    },
+  }));
+}
+
+function pendingQueryCommand(overrides: Partial<PendingQueryCommand> = {}): PendingQueryCommand {
+  return {
+    requestId: "qcreq-1",
+    queryHash: "hash-1",
+    command: "refetch",
+    sentAt: Date.now(),
+    status: "pending",
+    ...overrides,
+  };
+}
+
+function seedAppWithPendingQueryCommand(command: PendingQueryCommand): void {
+  useConnectionStore.setState((s) => ({
+    apps: { ...s.apps, [APP_ID]: fakeAppInfo() },
+    data: {
+      ...s.data,
+      [APP_ID]: {
+        ...emptyAppDataFor(APP_ID),
+        pendingQueryCommands: { [command.requestId]: command },
+      },
+    },
+  }));
+}
+
 /** Mirrors connection.ts's own emptyAppData() shape — not exported, so reconstructed here for the seed helper. */
 function emptyAppDataFor(_appId: string): AppData {
   return {
@@ -108,6 +164,10 @@ function emptyAppDataFor(_appId: string): AppData {
     pendingWrites: {},
     pendingStateWrites: {},
     pendingCacheClears: {},
+    pendingQueryWrites: {},
+    pendingQueryCommands: {},
+    queriesMeta: {},
+    storageMeta: {},
   };
 }
 
@@ -342,5 +402,176 @@ describe("pendingCacheClears reconciliation (spec 0008)", () => {
     const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingCacheClears);
     expect(entry.status).toBe("pending");
     expect(entry.requestId).toMatch(/^cc_/);
+  });
+});
+
+describe("pendingQueryWrites reconciliation (spec 0010)", () => {
+  it("query/write-result ok:true marks the matching pending write applied", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite());
+
+    const result = createEnvelope("query/write-result", APP_ID, { requestId: "qwreq-1", ok: true });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"].status).toBe("applied");
+  });
+
+  it("query/write-result ok:false marks it failed, carrying the error through", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite());
+
+    const result = createEnvelope("query/write-result", APP_ID, {
+      requestId: "qwreq-1",
+      ok: false,
+      errorCode: "no-query",
+      error: 'No query with hash "hash-1".',
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const write = useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"];
+    expect(write.status).toBe("failed");
+    expect(write.error).toBe('No query with hash "hash-1".');
+  });
+
+  it("a query/write-result for an unknown requestId is ignored, not crashing or creating a phantom entry", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite());
+
+    const result = createEnvelope("query/write-result", APP_ID, { requestId: "some-other-request", ok: true });
+    expect(() => useConnectionStore.getState().handleEnvelope(result)).not.toThrow();
+
+    const pendingQueryWrites = useConnectionStore.getState().data[APP_ID].pendingQueryWrites;
+    expect(pendingQueryWrites["qwreq-1"].status).toBe("pending"); // untouched
+    expect(pendingQueryWrites["some-other-request"]).toBeUndefined();
+  });
+
+  it("markDisconnected fails every still-pending query write for that app immediately", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite());
+    useConnectionStore.getState().markDisconnected(APP_ID);
+
+    const pendingQueryWrites = useConnectionStore.getState().data[APP_ID].pendingQueryWrites;
+    expect(pendingQueryWrites["qwreq-1"].status).toBe("failed");
+    expect(pendingQueryWrites["qwreq-1"].error).toBe("App disconnected");
+  });
+
+  it("a truncated value is rejected before ever being sent — the pending entry fails immediately", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    const truncated = { __spyglass_truncated: true, preview: "[Object]", originalType: "object" };
+    useConnectionStore.getState().sendQueryWrite(APP_ID, "hash-1", { value: truncated });
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingQueryWrites);
+    expect(entry.status).toBe("failed");
+    expect(entry.error).toMatch(/truncated/i);
+  });
+
+  it("sendQueryWrite tracks a new pending entry addressed by queryHash", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    useConnectionStore.getState().sendQueryWrite(APP_ID, "hash-1", { n: 42 });
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingQueryWrites);
+    expect(entry.status).toBe("pending");
+    expect(entry.requestId).toMatch(/^qw_/);
+    expect(entry.queryHash).toBe("hash-1");
+  });
+});
+
+describe("pendingQueryCommands reconciliation (spec 0010)", () => {
+  it("query/command-result ok:true marks the matching pending command applied", () => {
+    seedAppWithPendingQueryCommand(pendingQueryCommand());
+
+    const result = createEnvelope("query/command-result", APP_ID, { requestId: "qcreq-1", ok: true });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryCommands["qcreq-1"].status).toBe("applied");
+  });
+
+  it("query/command-result ok:false marks it failed, carrying the error through", () => {
+    seedAppWithPendingQueryCommand(pendingQueryCommand());
+
+    const result = createEnvelope("query/command-result", APP_ID, {
+      requestId: "qcreq-1",
+      ok: false,
+      errorCode: "engine-error",
+      error: "refetch threw",
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const command = useConnectionStore.getState().data[APP_ID].pendingQueryCommands["qcreq-1"];
+    expect(command.status).toBe("failed");
+    expect(command.error).toBe("refetch threw");
+  });
+
+  it("a query/command-result for an unknown requestId is ignored, not crashing or creating a phantom entry", () => {
+    seedAppWithPendingQueryCommand(pendingQueryCommand());
+
+    const result = createEnvelope("query/command-result", APP_ID, { requestId: "some-other-request", ok: true });
+    expect(() => useConnectionStore.getState().handleEnvelope(result)).not.toThrow();
+
+    const pendingQueryCommands = useConnectionStore.getState().data[APP_ID].pendingQueryCommands;
+    expect(pendingQueryCommands["qcreq-1"].status).toBe("pending"); // untouched
+    expect(pendingQueryCommands["some-other-request"]).toBeUndefined();
+  });
+
+  it("markDisconnected fails every still-pending query command for that app immediately", () => {
+    seedAppWithPendingQueryCommand(pendingQueryCommand());
+    useConnectionStore.getState().markDisconnected(APP_ID);
+
+    const pendingQueryCommands = useConnectionStore.getState().data[APP_ID].pendingQueryCommands;
+    expect(pendingQueryCommands["qcreq-1"].status).toBe("failed");
+    expect(pendingQueryCommands["qcreq-1"].error).toBe("App disconnected");
+  });
+
+  it("sendQueryCommand tracks a new pending entry with the queryHash and command kind", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    useConnectionStore.getState().sendQueryCommand(APP_ID, "hash-1", "invalidate");
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingQueryCommands);
+    expect(entry.status).toBe("pending");
+    expect(entry.requestId).toMatch(/^qc_/);
+    expect(entry.queryHash).toBe("hash-1");
+    expect(entry.command).toBe("invalidate");
+  });
+});
+
+describe("queriesMeta / storageMeta bookkeeping (spec 0011)", () => {
+  it("query/change records lastChangedAt for the matching queryHash", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    const change = createEnvelope("query/change", APP_ID, {
+      changeType: "updated",
+      queryHash: "hash-1",
+      query: {
+        queryHash: "hash-1",
+        queryKey: ["a"],
+        status: "success",
+        fetchStatus: "idle",
+        dataUpdatedAt: 0,
+        errorUpdatedAt: 0,
+        isInvalidated: false,
+        observersCount: 0,
+      },
+    });
+    useConnectionStore.getState().handleEnvelope(change);
+
+    expect(useConnectionStore.getState().data[APP_ID].queriesMeta["hash-1"]).toEqual({ lastChangedAt: change.ts });
+  });
+
+  it("query/change keeps recording lastChangedAt even for changeType: 'removed' — it's a history, not an existence flag", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    const change = createEnvelope("query/change", APP_ID, { changeType: "removed", queryHash: "hash-1" });
+    useConnectionStore.getState().handleEnvelope(change);
+
+    expect(useConnectionStore.getState().data[APP_ID].queries["hash-1"]).toBeUndefined();
+    expect(useConnectionStore.getState().data[APP_ID].queriesMeta["hash-1"]).toEqual({ lastChangedAt: change.ts });
+  });
+
+  it("storage/change records lastChangedAt for the matching engine+key", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    const change = createEnvelope("storage/change", APP_ID, { engine: "asyncStorage", changeType: "set", key: "token", value: "abc" });
+    useConnectionStore.getState().handleEnvelope(change);
+
+    expect(useConnectionStore.getState().data[APP_ID].storageMeta.asyncStorage?.token).toBe(change.ts);
   });
 });
