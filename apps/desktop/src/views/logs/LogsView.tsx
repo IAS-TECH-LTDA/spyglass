@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { LogLevel } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
 import { CopyButton } from "../../components/CopyButton";
-import { JsonTree } from "../../components/JsonTree";
+import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 
 const LEVELS: LogLevel[] = ["log", "info", "warn", "error", "debug"];
 
@@ -117,7 +117,7 @@ function LogRow({ entry }: { entry: { level: LogLevel; message: string; args: un
         <div className="log-args">
           {entry.args.map((arg, i) =>
             arg !== null && typeof arg === "object" ? (
-              <JsonTree key={i} data={arg} defaultExpandDepth={1} />
+              <JsonGraph key={i} data={arg} defaultExpandDepth={1} />
             ) : (
               <div key={i} className="jt-row">
                 <PrimitiveArg value={arg} />

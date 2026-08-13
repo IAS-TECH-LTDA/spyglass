@@ -14,6 +14,20 @@ describe("envelope", () => {
     expect(decodeEnvelope("not json")).toBeNull();
     expect(decodeEnvelope(JSON.stringify({ foo: "bar" }))).toBeNull();
   });
+
+  it("round-trips the storage/write and storage/write-result pair (the one Desktop -> SDK direction)", () => {
+    const write = createEnvelope("storage/write", "app-1", {
+      requestId: "req-1",
+      engine: "asyncStorage",
+      key: "token",
+      op: "set",
+      value: "abc",
+    });
+    expect(decodeEnvelope(encodeEnvelope(write))).toEqual(write);
+
+    const result = createEnvelope("storage/write-result", "app-1", { requestId: "req-1", ok: true });
+    expect(decodeEnvelope(encodeEnvelope(result))).toEqual(result);
+  });
 });
 
 describe("diffValues", () => {
@@ -55,6 +69,46 @@ describe("applyPatch", () => {
   it("handles a top-level type change", () => {
     const ops = diffValues({ a: 1 }, "now a string");
     expect(applyPatch({ a: 1 }, ops)).toBe("now a string");
+  });
+
+  it("fails safe on a malformed/non-array diff instead of throwing", () => {
+    const state = { a: 1 };
+    // biome-ignore lint: deliberately wrong shape, simulating an attacker-controlled wire frame
+    expect(applyPatch(state, { not: "an array" } as unknown as never)).toBe(state);
+    // biome-ignore lint: same
+    expect(applyPatch(state, null as unknown as never)).toBe(state);
+  });
+
+  it("rejects __proto__/constructor/prototype path segments without polluting Object.prototype", () => {
+    const state = { a: { b: 1 } };
+    const result = applyPatch(state, [
+      { op: "replace", path: "/a/__proto__/polluted", value: "PWN" },
+    ]) as Record<string, unknown>;
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(result.a)).toBe(Object.prototype);
+    expect(result).toEqual(state);
+  });
+
+  it("rejects out-of-range/non-integer array indices instead of creating a sparse array", () => {
+    const state = { items: [1, 2, 3] };
+    const huge = applyPatch(state, [
+      { op: "replace", path: "/items/999999999", value: "x" },
+    ]) as typeof state;
+    expect(huge.items.length).toBe(3);
+
+    const negative = applyPatch(state, [{ op: "replace", path: "/items/-1", value: "x" }]) as typeof state;
+    expect(negative).toEqual(state);
+
+    // Appending exactly at length is still allowed (matches a legitimate diff).
+    const appended = applyPatch(state, [{ op: "replace", path: "/items/3", value: 4 }]) as typeof state;
+    expect(appended.items).toEqual([1, 2, 3, 4]);
+  });
+
+  it("ignores a patch whose path has an implausible number of segments instead of recursing unbounded", () => {
+    const state = { a: 1 };
+    const deepPath = `/${Array.from({ length: 5000 }, () => "x").join("/")}`;
+    expect(() => applyPatch(state, [{ op: "replace", path: deepPath, value: 1 }])).not.toThrow();
+    expect(applyPatch(state, [{ op: "replace", path: deepPath, value: 1 }])).toEqual(state);
   });
 });
 
@@ -98,6 +152,14 @@ describe("safeSerialize", () => {
   it("handles an Error nested inside a plain object/array", () => {
     const result = safeSerialize({ error: new Error("nested") }) as { error: Record<string, unknown> };
     expect(result.error.message).toBe("nested");
+  });
+
+  it("truncates an oversized Error message/stack instead of shipping it unbounded", () => {
+    const err = new Error("x".repeat(50_000));
+    err.stack = "y".repeat(50_000);
+    const result = safeSerialize(err) as Record<string, unknown>;
+    expect((result.message as { __spyglass_truncated: boolean }).__spyglass_truncated).toBe(true);
+    expect((result.stack as { __spyglass_truncated: boolean }).__spyglass_truncated).toBe(true);
   });
 });
 

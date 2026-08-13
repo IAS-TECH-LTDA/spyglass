@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
-import { JsonTree } from "../../components/JsonTree";
+import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 import type { NavEdge, NavNode, NavTransitionEvent } from "../../state/connection";
 import { useConnectionStore } from "../../state/connection";
@@ -120,7 +120,10 @@ export function GraphView({ appId }: { appId: string }) {
                 <span>Last seen {new Date(selectedNode.lastSeenAt).toLocaleTimeString()}</span>
               </div>
               {selectedNode.params && Object.keys(selectedNode.params).length > 0 ? (
-                <JsonTree data={selectedNode.params} defaultExpandDepth={2} />
+                // No inspector column here — this panel *is* already the
+                // detail column (.nav-detail); a second one nested inside it
+                // would be a panel-in-a-panel for no benefit.
+                <JsonGraph data={selectedNode.params} defaultExpandDepth={2} inspector={false} />
               ) : (
                 <p className="muted">No params.</p>
               )}

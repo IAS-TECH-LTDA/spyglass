@@ -52,7 +52,14 @@ function walk(value: unknown, seen: WeakSet<object>, depth: number): unknown {
     // properties the error has (native bridge errors, DOMException-likes,
     // and custom Error subclasses often attach their own, e.g. `code`).
     seen.add(value);
-    const out: Record<string, unknown> = { name: value.name, message: value.message, stack: value.stack };
+    // Route through normalizePrimitive like any other string so a huge
+    // message/stack (a deep RN bridge trace, say) can't bypass MAX_VALUE_SIZE
+    // just because it's read off `.message`/`.stack` instead of a plain key.
+    const out: Record<string, unknown> = {
+      name: normalizePrimitive(value.name),
+      message: normalizePrimitive(value.message),
+      stack: normalizePrimitive(value.stack),
+    };
     for (const key of Object.keys(value)) {
       if (key in out) continue;
       out[key] = walk((value as unknown as Record<string, unknown>)[key], seen, depth + 1);

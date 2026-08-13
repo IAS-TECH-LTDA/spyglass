@@ -1,7 +1,8 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageEngine, StorageSnapshotPayload } from "spyglass-protocol";
+import { registerStorageWriteHandler } from "../commands.js";
 import { getCore } from "../core.js";
-import { parseMaybeJson } from "./shared.js";
+import { parseMaybeJson, serializeForKv } from "./shared.js";
 
 export interface WebStorageAdapterOptions {
   /** Defaults to auto-detecting by comparing against `window.localStorage`. */
@@ -84,10 +85,18 @@ export function attachWebStorage(storage: Storage, options: WebStorageAdapterOpt
   };
   globalThis.addEventListener?.("storage", onCrossTabChange);
 
+  // Through the patched `storage.setItem`/`removeItem` above, same reasoning
+  // as the AsyncStorage adapter: the echo comes for free via emitChange.
+  const unregisterWrite = registerStorageWriteHandler(engine, options.dbName, (op, key, value) => {
+    if (op === "remove") storage.removeItem(key);
+    else storage.setItem(key, serializeForKv(value));
+  });
+
   return () => {
     storage.setItem = original.setItem;
     storage.removeItem = original.removeItem;
     storage.clear = original.clear;
     globalThis.removeEventListener?.("storage", onCrossTabChange);
+    unregisterWrite();
   };
 }

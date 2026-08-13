@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { MemoryPanel } from "../../components/memory/MemoryPanel";
 import type { PerfSample, PerfStall } from "../../state/connection";
 import { useConnectionStore } from "../../state/connection";
 
@@ -15,17 +16,12 @@ export function PerformanceView({ appId }: { appId: string }) {
   const navGraph = useConnectionStore((s) => s.data[appId]?.navGraph);
   const clearPerf = useConnectionStore((s) => s.clearPerf);
 
-  if (perfSamples.length === 0 && perfStalls.length === 0) {
-    return (
-      <div className="view-empty">
-        <p>
-          No performance data yet. Attach <code>attachPerformance()</code> from{" "}
-          <code>spyglass-react/performance</code>.
-        </p>
-      </div>
-    );
-  }
-
+  // Deliberately not an early-return-the-whole-view case (unlike every
+  // other empty state in this app): the Memory panel below doesn't depend
+  // on attachPerformance() at all — it reads via adb/footprint on the
+  // desktop side (spec 0008) — so an app that never attached the FPS/stall
+  // adapter should still see it.
+  const hasPerfData = perfSamples.length > 0 || perfStalls.length > 0;
   const latest = perfSamples[0];
 
   const screenAt = (ts: number): string | undefined => {
@@ -47,16 +43,25 @@ export function PerformanceView({ appId }: { appId: string }) {
 
       <div className="perf-body">
         <section className="perf-summary">
-          {latest ? (
-            <div className="perf-fps-readout">
-              <span className={`perf-fps-value perf-fps-${fpsSeverity(latest.fps)}`}>{latest.fps}</span>
-              <span className="perf-fps-label">fps</span>
-            </div>
+          {hasPerfData ? (
+            <>
+              {latest ? (
+                <div className="perf-fps-readout">
+                  <span className={`perf-fps-value perf-fps-${fpsSeverity(latest.fps)}`}>{latest.fps}</span>
+                  <span className="perf-fps-label">fps</span>
+                </div>
+              ) : (
+                <p className="muted">Waiting for the first sample…</p>
+              )}
+              {perfSamples.length > 1 && <FpsChart samples={perfSamples} />}
+            </>
           ) : (
-            <p className="muted">Waiting for the first sample…</p>
+            <p className="muted">
+              No performance data yet. Attach <code>attachPerformance()</code> from <code>spyglass-react/performance</code>.
+            </p>
           )}
 
-          {perfSamples.length > 1 && <FpsChart samples={perfSamples} />}
+          <MemoryPanel appId={appId} />
         </section>
 
         <section className="perf-stalls">

@@ -24,6 +24,24 @@ export type MessageType =
   | "state/action"
   | "storage/snapshot"
   | "storage/change"
+  // Desktop -> SDK. Every other message type flows SDK -> Desktop only
+  // ("hello/ack" is declared but never implemented on either end) — this
+  // pair is the one deliberate exception, see StorageWritePayload's doc
+  // comment. Dev-only: the SDK doesn't even register a handler for
+  // "storage/write" outside a dev-style environment (see
+  // InitOptions.allowRemoteWrites).
+  | "storage/write"
+  | "storage/write-result"
+  // Same direction/gating as storage/write, for state managers — see
+  // StateWritePayload's doc comment. Zustand-only for now.
+  | "state/write"
+  | "state/write-result"
+  // Same direction/gating as storage/write and state/write, but not a
+  // per-resource write — see MemoryClearCachePayload's doc comment
+  // (spec 0008). No `key`/`storeId`, since "clear this app's own caches"
+  // has no target to address.
+  | "memory/clear-cache"
+  | "memory/clear-cache-result"
   | "log/entry"
   | "network/request"
   | "network/response"
@@ -70,6 +88,12 @@ export type Capability =
   | "storage:realm"
   | "storage:localStorage"
   | "storage:sessionStorage"
+  /** Only advertised when the SDK has the inbound `storage/write` channel enabled (dev-only by default) — lets the desktop show read-only instead of waiting out a timeout against a build that will never ack. */
+  | "storage:write"
+  /** Same as `storage:write`, for `state/write` — advertised whenever the shared inbound-commands channel is on, independent of whether any store actually has a handler registered (an unregistered storeId just gets `errorCode: "no-store"`). */
+  | "state:write"
+  /** Same as `storage:write`/`state:write`, for `memory/clear-cache` (spec 0008) — advertised whenever the shared inbound-commands channel is on. Unlike the other two, there's no per-resource registration to fail against: the handler is either present (`allowRemoteWrites` on) or the whole channel isn't wired up at all. */
+  | "memory:clear-cache"
   | "console"
   | "network"
   | "query:react-query"
@@ -165,6 +189,69 @@ export interface StateActionPayload {
   nextStateHash: string;
 }
 
+/**
+ * Desktop -> SDK: apply an edited leaf back onto a store's state from the
+ * desktop's `JsonGraph` editor, live (spec 0007-state). Unlike
+ * `StorageWritePayload`, this always carries the whole reconstructed state
+ * rather than a single key — the desktop applies the edited leaf locally
+ * (via `applyPatch`) and sends the result, so the SDK side never needs a
+ * patch-application step of its own. It's still a *shallow merge* on the
+ * SDK side, not a full replace: the desktop only ever sees the serialized
+ * (data) half of the store, never its action functions, so a full replace
+ * would wipe every `increment`/`reset`/etc. off the store. See
+ * `state/zustand.ts`'s write handler for where that merge happens.
+ *
+ * Zustand-only for now — it's the one state manager with a single `set()`
+ * every store already routes through (see `state/autoAttachZustand.ts` and
+ * the SDK README's "Why not every adapter?"); Redux/Jotai/Recoil/MobX have
+ * no equivalent, so `state/write` for a `storeId` backed by one of those
+ * simply gets `errorCode: "no-store"` back — no handler was ever registered
+ * for it, same as `storage/write` against an engine with no attached
+ * adapter. No per-field reconciliation against organic `state/action`s
+ * either (unlike storage's `storage/change` correlation) — `state/action`
+ * carries no `requestId` to correlate against, so a write here only
+ * resolves via its own explicit `state/write-result` ack or the shared
+ * `STORAGE_WRITE_TIMEOUT_MS` timeout/disconnect, never a "superseded" state.
+ */
+export interface StateWritePayload {
+  requestId: string;
+  storeId: string;
+  state: unknown;
+}
+
+export type StateWriteErrorCode = "no-store" | "engine-error";
+
+export interface StateWriteResultPayload {
+  requestId: string;
+  ok: boolean;
+  errorCode?: StateWriteErrorCode;
+  error?: string;
+}
+
+/**
+ * Desktop -> SDK: "clear this app's own caches" (spec 0008). No target
+ * field (no `key`/`storeId`/`engine`) — unlike `storage/write`/`state/write`,
+ * this isn't a per-resource write, it's a single global action the SDK
+ * either can or can't perform. The SDK tries `global.gc()` (Hermes, present
+ * in production builds) and, if `expo-image` is installed,
+ * `Image.clearMemoryCache()`/`clearDiskCache()` — see
+ * `packages/sdk/src/memoryClear.ts`. Deliberately named "clear caches", not
+ * "free memory": no third-party app can ask the OS to release memory back
+ * to it, on iOS or Android — only its own caches.
+ */
+export interface MemoryClearCachePayload {
+  requestId: string;
+}
+
+export type MemoryClearCacheErrorCode = "engine-error";
+
+export interface MemoryClearCacheResultPayload {
+  requestId: string;
+  ok: boolean;
+  errorCode?: MemoryClearCacheErrorCode;
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
@@ -230,6 +317,50 @@ export interface StorageChangePayload {
   table?: string;
   row?: unknown;
   rowId?: string;
+}
+
+/**
+ * Desktop -> SDK: write a KV storage value from the desktop's `JsonGraph`
+ * editor into the real, connected app (spec 0007). MVP scope is
+ * intentionally narrow: key/value engines only (`asyncStorage`, `mmkv`,
+ * `localStorage`, `sessionStorage`) — not the relational/collection engines
+ * (`sqlite`, `watermelondb`, `realm`). State managers have their own,
+ * separate write channel (`StateWritePayload`, Zustand-only) rather than
+ * being folded in here — a store isn't a KV engine, so `key`/`op` don't
+ * apply to it.
+ *
+ * There's no delivery guarantee in this direction (the app may have
+ * disconnected, or — in production — never even registered a handler), so
+ * every write carries a desktop-minted `requestId` that `StorageWriteResultPayload`
+ * echoes back. The desktop uses it to (a) tell its own write echoing back as
+ * a `storage/change` apart from an unrelated app-originated change, and (b)
+ * time out (see `STORAGE_WRITE_TIMEOUT_MS`) instead of waiting forever.
+ */
+export type StorageWriteOp = "set" | "remove";
+
+export interface StorageWritePayload {
+  requestId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  key: string;
+  op: StorageWriteOp;
+  /** Present for `op: "set"`; absent for `op: "remove"`. */
+  value?: unknown;
+}
+
+export type StorageWriteErrorCode =
+  /** No attached adapter for this engine/dbName — most commonly a stale UI after the app detached that adapter. */
+  | "no-adapter"
+  | "unsupported-op"
+  /** The underlying engine call itself threw (e.g. AsyncStorage.setItem rejected). */
+  | "engine-error";
+
+export interface StorageWriteResultPayload {
+  requestId: string;
+  ok: boolean;
+  errorCode?: StorageWriteErrorCode;
+  /** Human-readable, shown verbatim in the desktop's failure state. */
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,6 +491,12 @@ export interface PayloadByType {
   "state/action": StateActionPayload;
   "storage/snapshot": StorageSnapshotPayload;
   "storage/change": StorageChangePayload;
+  "storage/write": StorageWritePayload;
+  "storage/write-result": StorageWriteResultPayload;
+  "state/write": StateWritePayload;
+  "state/write-result": StateWriteResultPayload;
+  "memory/clear-cache": MemoryClearCachePayload;
+  "memory/clear-cache-result": MemoryClearCacheResultPayload;
   "log/entry": LogEntryPayload;
   "network/request": NetworkRequestPayload;
   "network/response": NetworkResponsePayload;

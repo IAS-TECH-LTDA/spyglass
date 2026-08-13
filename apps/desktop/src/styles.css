@@ -440,6 +440,12 @@ body {
   padding: 12px 16px;
   overflow: auto;
   border-right: 1px solid var(--border);
+  /* Direct grid item of .stores-view (display: grid) — without this, the
+     default min-width:auto on a grid item can leave the embedded JsonGraph
+     canvas measuring itself against its own content instead of the actual
+     1fr track width, rendering undersized with empty space beside it.
+     Same fix GraphView/SchemaDiagram's canvas containers already have. */
+  min-width: 0;
 }
 
 .store-log {
@@ -453,6 +459,16 @@ body {
   text-transform: uppercase;
   color: var(--text-muted);
   letter-spacing: 0.04em;
+}
+
+.store-state-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.store-state-head h3 {
+  margin: 0 0 10px;
 }
 
 pre {
@@ -766,6 +782,52 @@ th {
   gap: 10px;
 }
 
+.kv-raw-toggle {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.kv-raw-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.kv-raw-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kv-raw-textarea {
+  min-height: 160px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.kv-raw-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.kv-raw-error {
+  color: var(--red);
+  font-size: 12px;
+  margin: 0;
+}
+
 .row-detail-field {
   display: flex;
   flex-direction: column;
@@ -1071,7 +1133,7 @@ th {
 
 .network-item {
   display: grid;
-  grid-template-columns: 40px 44px 1fr auto;
+  grid-template-columns: 40px 44px 1fr auto auto;
   align-items: center;
   gap: 8px;
   font-size: 12px;
@@ -1079,6 +1141,10 @@ th {
 
 .network-item small {
   color: var(--text-muted);
+}
+
+.network-time {
+  font-variant-numeric: tabular-nums;
 }
 
 .network-method {
@@ -1120,6 +1186,8 @@ th {
 .network-detail {
   padding: 12px 16px;
   overflow: auto;
+  /* Direct grid item of .network-view — see .store-state's comment. */
+  min-width: 0;
 }
 
 .network-detail-head {
@@ -1167,16 +1235,26 @@ th {
 .network-section-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   margin-bottom: 8px;
 }
 
+.network-section-head-clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
 .network-section-head h4 {
+  flex: 1;
   margin: 0;
   font-size: 12px;
   text-transform: uppercase;
   color: var(--text-muted);
   letter-spacing: 0.04em;
+}
+
+.network-section-body {
+  margin-top: 4px;
 }
 
 .network-error {
@@ -1327,6 +1405,346 @@ th {
   font-style: normal;
 }
 
+/* JSON graph (JsonGraph — node-diagram replacement for JsonTree) */
+
+.json-graph {
+  width: 100%;
+  /* Defense in depth: the *real* fix for the "undersized canvas, empty
+     space beside it" bug is min-width:0 on whichever flex/grid item
+     directly contains this (see e.g. .store-state's comment) — that's
+     where the default min-width:auto actually bites. Setting it here too
+     costs nothing and protects any future call site that forgets it. */
+  min-width: 0;
+}
+
+.json-graph .react-flow {
+  background: var(--bg);
+}
+
+.json-graph-flat {
+  display: flex;
+}
+
+.json-graph-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.json-graph-node {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  /* Wide enough that typical state/storage values (JWTs, UUIDs, hashes)
+     get real room before .jgn-value's ellipsis kicks in — 240px truncated
+     almost everything down to a few characters. Still capped so a small
+     object doesn't stretch to fill an entire wide canvas on its own; the
+     ellipsis stays as the safety net for anything longer than this. */
+  min-width: 420px;
+  max-width: min(100%, 640px);
+}
+
+.json-graph-node-header {
+  padding: 7px 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.json-graph-node-rows {
+  overflow: auto;
+  max-height: 340px;
+}
+
+.json-graph-handle {
+  width: 6px;
+  height: 6px;
+  background: var(--border);
+  border: none;
+}
+
+.jgn-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  height: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+  overflow: hidden;
+  /* Flex items default to min-width:auto, which blocks shrinking below
+     content size — the same JsonTree/.jt-row already guards against (see
+     its comment): an unbroken token (JWT, hash, base64 blob) as a value
+     would otherwise push this row, its card, and the whole canvas wider
+     than the window instead of being clipped by `overflow: hidden` above. */
+  min-width: 0;
+}
+
+/* Most rows render as a real <button> now (a11y — see JsonValueNode's
+   RowTag), not a <div>, so the button's own default chrome (border, left
+   text-align, full-width block) needs resetting to keep the same look. */
+button.jgn-row {
+  width: 100%;
+  border: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+.jgn-row-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.jgn-row-clickable {
+  cursor: pointer;
+}
+
+.jgn-row-clickable:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.jgn-row-selected {
+  background: var(--accent-soft);
+}
+
+.jgn-toggle {
+  display: inline-block;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  width: 8px;
+}
+
+.jgn-key {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.jgn-summary {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.jgn-summary-muted {
+  opacity: 0.6;
+}
+
+/* Wraps the actual value (string/number/boolean/inline-array) so it — not
+   the whole row — is what truncates with an ellipsis. Without this, a long
+   unbroken string has nothing narrower than itself to clip against. */
+.jgn-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jgn-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.jgn-status-dot-pending {
+  background: var(--accent);
+  animation: jgn-pulse 1s ease-in-out infinite;
+}
+
+.jgn-status-dot-applied {
+  background: var(--green);
+}
+
+.jgn-status-dot-failed {
+  background: var(--red);
+}
+
+.jgn-status-dot-superseded {
+  background: #facc15;
+}
+
+.jgn-status-failed {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+@keyframes jgn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* JSON inspector column — click-a-field side panel, opens next to the
+   canvas/flat card. `flex-wrap` (not a grid with a fixed column) is the
+   whole responsiveness story here: a wide container (Storage KV, Stores)
+   keeps the two side by side, a narrow one (an accordion row, .log-args)
+   drops the panel below the diagram instead of squeezing both illegibly —
+   no container query needed. */
+.json-graph-shell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.json-graph-main {
+  flex: 1 1 380px;
+  min-width: 0;
+}
+
+.json-inspector {
+  flex: 1 1 300px;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.json-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.json-inspector-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SF Mono", Menlo, monospace;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.json-inspector-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.json-inspector-textarea {
+  min-height: 120px;
+  max-height: 320px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.json-inspector-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.json-inspector-textarea[readonly] {
+  color: var(--text-muted);
+}
+
+.json-inspector-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.json-inspector-circular {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.json-inspector-fields h4 {
+  margin: 0 0 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* Fixed Field/Value table — table-layout:fixed keeps the two columns from
+   jostling around as different rows' values change width, which is the
+   whole point: a stable layout is easier to scan than a list that reflows
+   on every selection. */
+.json-inspector-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 11px;
+}
+
+.json-inspector-table th {
+  text-align: left;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 0 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.json-inspector-table th:first-child,
+.json-inspector-table td:first-child {
+  width: 96px;
+}
+
+.json-inspector-row {
+  cursor: pointer;
+}
+
+.json-inspector-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* The field currently open in the editor above — same highlight color as
+   the canvas card's own .jgn-row-selected, so the two stay visually tied
+   together. */
+.json-inspector-row-selected {
+  background: var(--accent-soft);
+}
+
+.json-inspector-row td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.json-inspector-row-key {
+  color: var(--accent);
+}
+
+.json-inspector-row-value {
+  color: var(--text-muted);
+}
+
 /* Queries view */
 
 .queries-view {
@@ -1358,6 +1776,8 @@ th {
 .query-detail {
   padding: 12px 16px;
   overflow: auto;
+  /* Direct grid item of .queries-view — see .store-state's comment. */
+  min-width: 0;
 }
 
 .query-detail-head {
@@ -1524,6 +1944,101 @@ th {
   fill: var(--text);
   font-size: 10px;
   font-family: "SF Mono", Menlo, monospace;
+}
+
+/* Memory panel (spec 0008) — lives inside .perf-summary, below the FPS
+   chart, sharing its scroll container rather than needing its own. */
+.memory-panel {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.memory-panel h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.memory-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.memory-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.memory-picker select,
+.memory-picker input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 12px;
+  min-width: 180px;
+}
+
+.memory-suggestion {
+  align-self: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.memory-suggestion:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.memory-error {
+  color: var(--red);
+  font-size: 12px;
+}
+
+.memory-readouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.memory-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memory-readout-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.memory-readout-value {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 16px;
+}
+
+.memory-physical-note {
+  margin-top: 16px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .perf-stalls {
@@ -1904,4 +2419,51 @@ th {
   .splash-ring-inner {
     animation: none;
   }
+}
+
+/* Error boundary (unexpected render crash, e.g. a malformed wire payload) */
+
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 24px;
+}
+
+.error-boundary-body {
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.error-boundary-body h2 {
+  margin: 0;
+}
+
+.error-boundary-message {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--red);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.btn-accent {
+  align-self: flex-start;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn-accent:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }

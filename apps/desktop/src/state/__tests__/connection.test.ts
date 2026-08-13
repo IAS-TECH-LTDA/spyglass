@@ -1,0 +1,346 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { createEnvelope } from "spyglass-protocol";
+import { useConnectionStore, type AppData, type PendingCacheClear, type PendingStateWrite, type PendingWrite } from "../connection";
+import type { AppInfo } from "../../ipc";
+
+const APP_ID = "app-1";
+
+function fakeAppInfo(overrides: Partial<AppInfo> = {}): AppInfo {
+  return {
+    appId: APP_ID,
+    appName: "TestApp",
+    platform: "ios",
+    sdkVersion: "0.1.1",
+    capabilities: ["storage:asyncStorage"],
+    connectedAt: Date.now(),
+    lastSeen: Date.now(),
+    connected: true,
+    ...overrides,
+  };
+}
+
+function pendingWrite(overrides: Partial<PendingWrite> = {}): PendingWrite {
+  return {
+    requestId: "req-1",
+    engine: "asyncStorage",
+    key: "token",
+    op: "set",
+    value: "new-value",
+    sentAt: Date.now(),
+    status: "pending",
+    ...overrides,
+  };
+}
+
+function seedAppWithPendingWrite(write: PendingWrite): void {
+  useConnectionStore.setState((s) => ({
+    apps: { ...s.apps, [APP_ID]: fakeAppInfo() },
+    data: {
+      ...s.data,
+      [APP_ID]: {
+        ...emptyAppDataFor(APP_ID),
+        storage: { asyncStorage: { engine: "asyncStorage", entries: [{ key: "token", value: "old-value" }] } },
+        pendingWrites: { [write.requestId]: write },
+      },
+    },
+  }));
+}
+
+function pendingStateWrite(overrides: Partial<PendingStateWrite> = {}): PendingStateWrite {
+  return {
+    requestId: "sreq-1",
+    storeId: "zustand",
+    state: { count: 1 },
+    sentAt: Date.now(),
+    status: "pending",
+    ...overrides,
+  };
+}
+
+function seedAppWithPendingStateWrite(write: PendingStateWrite): void {
+  useConnectionStore.setState((s) => ({
+    apps: { ...s.apps, [APP_ID]: fakeAppInfo() },
+    data: {
+      ...s.data,
+      [APP_ID]: {
+        ...emptyAppDataFor(APP_ID),
+        stores: { zustand: { storeId: "zustand", storeType: "zustand", state: { count: 0 }, log: [] } },
+        pendingStateWrites: { [write.requestId]: write },
+      },
+    },
+  }));
+}
+
+function pendingCacheClear(overrides: Partial<PendingCacheClear> = {}): PendingCacheClear {
+  return {
+    requestId: "creq-1",
+    sentAt: Date.now(),
+    status: "pending",
+    ...overrides,
+  };
+}
+
+function seedAppWithPendingCacheClear(clear: PendingCacheClear): void {
+  useConnectionStore.setState((s) => ({
+    apps: { ...s.apps, [APP_ID]: fakeAppInfo() },
+    data: {
+      ...s.data,
+      [APP_ID]: {
+        ...emptyAppDataFor(APP_ID),
+        pendingCacheClears: { [clear.requestId]: clear },
+      },
+    },
+  }));
+}
+
+/** Mirrors connection.ts's own emptyAppData() shape — not exported, so reconstructed here for the seed helper. */
+function emptyAppDataFor(_appId: string): AppData {
+  return {
+    navGraph: { nodes: {}, edges: {}, transitions: [] },
+    stores: {},
+    storage: {},
+    queries: {},
+    logs: [],
+    network: [],
+    perfSamples: [],
+    perfStalls: [],
+    alerts: { log: 0, network: 0 },
+    pendingWrites: {},
+    pendingStateWrites: {},
+    pendingCacheClears: {},
+  };
+}
+
+beforeEach(() => {
+  useConnectionStore.setState({ apps: {}, selectedAppId: null, data: {}, activeTab: "graph" });
+});
+
+describe("pendingWrites reconciliation", () => {
+  it("storage/write-result ok:true marks the matching pending write applied", () => {
+    seedAppWithPendingWrite(pendingWrite());
+
+    const result = createEnvelope("storage/write-result", APP_ID, { requestId: "req-1", ok: true });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingWrites["req-1"].status).toBe("applied");
+  });
+
+  it("storage/write-result ok:false marks it failed, carrying the error through", () => {
+    seedAppWithPendingWrite(pendingWrite());
+
+    const result = createEnvelope("storage/write-result", APP_ID, {
+      requestId: "req-1",
+      ok: false,
+      errorCode: "engine-error",
+      error: "setItem rejected",
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const write = useConnectionStore.getState().data[APP_ID].pendingWrites["req-1"];
+    expect(write.status).toBe("failed");
+    expect(write.error).toBe("setItem rejected");
+  });
+
+  it("a storage/write-result for an unknown requestId is ignored, not crashing or creating a phantom entry", () => {
+    seedAppWithPendingWrite(pendingWrite());
+
+    const result = createEnvelope("storage/write-result", APP_ID, { requestId: "some-other-request", ok: true });
+    expect(() => useConnectionStore.getState().handleEnvelope(result)).not.toThrow();
+
+    const pendingWrites = useConnectionStore.getState().data[APP_ID].pendingWrites;
+    expect(pendingWrites["req-1"].status).toBe("pending"); // untouched
+    expect(pendingWrites["some-other-request"]).toBeUndefined();
+  });
+
+  it("a matching storage/change (same value) marks the pending write applied", () => {
+    seedAppWithPendingWrite(pendingWrite({ value: "new-value" }));
+
+    const change = createEnvelope("storage/change", APP_ID, {
+      engine: "asyncStorage",
+      changeType: "set",
+      key: "token",
+      value: "new-value",
+    });
+    useConnectionStore.getState().handleEnvelope(change);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingWrites["req-1"].status).toBe("applied");
+  });
+
+  it("a non-matching storage/change for the same key marks the pending write superseded", () => {
+    seedAppWithPendingWrite(pendingWrite({ value: "new-value" }));
+
+    const change = createEnvelope("storage/change", APP_ID, {
+      engine: "asyncStorage",
+      changeType: "set",
+      key: "token",
+      value: "something-else-entirely",
+    });
+    useConnectionStore.getState().handleEnvelope(change);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingWrites["req-1"].status).toBe("superseded");
+  });
+
+  it("a storage/change for a different key doesn't touch an unrelated pending write", () => {
+    seedAppWithPendingWrite(pendingWrite({ key: "token" }));
+
+    const change = createEnvelope("storage/change", APP_ID, {
+      engine: "asyncStorage",
+      changeType: "set",
+      key: "unrelated-key",
+      value: "whatever",
+    });
+    useConnectionStore.getState().handleEnvelope(change);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingWrites["req-1"].status).toBe("pending");
+  });
+
+  it("markDisconnected fails every still-pending write for that app immediately", () => {
+    seedAppWithPendingWrite(pendingWrite());
+    // A second, already-resolved write must be left alone.
+    useConnectionStore.setState((s) => ({
+      data: {
+        ...s.data,
+        [APP_ID]: {
+          ...s.data[APP_ID],
+          pendingWrites: {
+            ...s.data[APP_ID].pendingWrites,
+            "req-2": pendingWrite({ requestId: "req-2", status: "applied" }),
+          },
+        },
+      },
+    }));
+
+    useConnectionStore.getState().markDisconnected(APP_ID);
+
+    const pendingWrites = useConnectionStore.getState().data[APP_ID].pendingWrites;
+    expect(pendingWrites["req-1"].status).toBe("failed");
+    expect(pendingWrites["req-1"].error).toBe("App disconnected");
+    expect(pendingWrites["req-2"].status).toBe("applied"); // untouched — wasn't pending
+  });
+
+  it("a truncated value is rejected before ever being sent — the pending entry fails immediately", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    const truncated = { __spyglass_truncated: true, preview: "[Object]", originalType: "object" };
+    useConnectionStore.getState().sendStorageWrite(APP_ID, "asyncStorage", undefined, "token", "set", { nested: truncated });
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingWrites);
+    expect(entry.status).toBe("failed");
+    expect(entry.error).toMatch(/truncated/i);
+  });
+});
+
+describe("pendingStateWrites reconciliation (spec 0007-state)", () => {
+  it("state/write-result ok:true marks the matching pending write applied", () => {
+    seedAppWithPendingStateWrite(pendingStateWrite());
+
+    const result = createEnvelope("state/write-result", APP_ID, { requestId: "sreq-1", ok: true });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingStateWrites["sreq-1"].status).toBe("applied");
+  });
+
+  it("state/write-result ok:false marks it failed, carrying the error through", () => {
+    seedAppWithPendingStateWrite(pendingStateWrite());
+
+    const result = createEnvelope("state/write-result", APP_ID, {
+      requestId: "sreq-1",
+      ok: false,
+      errorCode: "no-store",
+      error: "No attached store",
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const write = useConnectionStore.getState().data[APP_ID].pendingStateWrites["sreq-1"];
+    expect(write.status).toBe("failed");
+    expect(write.error).toBe("No attached store");
+  });
+
+  it("a state/write-result for an unknown requestId is ignored, not crashing or creating a phantom entry", () => {
+    seedAppWithPendingStateWrite(pendingStateWrite());
+
+    const result = createEnvelope("state/write-result", APP_ID, { requestId: "some-other-request", ok: true });
+    expect(() => useConnectionStore.getState().handleEnvelope(result)).not.toThrow();
+
+    const pendingStateWrites = useConnectionStore.getState().data[APP_ID].pendingStateWrites;
+    expect(pendingStateWrites["sreq-1"].status).toBe("pending"); // untouched
+    expect(pendingStateWrites["some-other-request"]).toBeUndefined();
+  });
+
+  it("markDisconnected fails every still-pending state write for that app immediately, leaving pendingWrites' own bookkeeping untouched", () => {
+    seedAppWithPendingStateWrite(pendingStateWrite());
+    useConnectionStore.getState().markDisconnected(APP_ID);
+
+    const pendingStateWrites = useConnectionStore.getState().data[APP_ID].pendingStateWrites;
+    expect(pendingStateWrites["sreq-1"].status).toBe("failed");
+    expect(pendingStateWrites["sreq-1"].error).toBe("App disconnected");
+  });
+
+  it("a truncated value is rejected before ever being sent — the pending entry fails immediately", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    const truncated = { __spyglass_truncated: true, preview: "[Object]", originalType: "object" };
+    useConnectionStore.getState().sendStateWrite(APP_ID, "zustand", { token: truncated });
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingStateWrites);
+    expect(entry.status).toBe("failed");
+    expect(entry.error).toMatch(/truncated/i);
+  });
+});
+
+describe("pendingCacheClears reconciliation (spec 0008)", () => {
+  it("memory/clear-cache-result ok:true marks the matching pending clear applied", () => {
+    seedAppWithPendingCacheClear(pendingCacheClear());
+
+    const result = createEnvelope("memory/clear-cache-result", APP_ID, { requestId: "creq-1", ok: true });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingCacheClears["creq-1"].status).toBe("applied");
+  });
+
+  it("memory/clear-cache-result ok:false marks it failed, carrying the error through", () => {
+    seedAppWithPendingCacheClear(pendingCacheClear());
+
+    const result = createEnvelope("memory/clear-cache-result", APP_ID, {
+      requestId: "creq-1",
+      ok: false,
+      errorCode: "engine-error",
+      error: "gc threw",
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const clear = useConnectionStore.getState().data[APP_ID].pendingCacheClears["creq-1"];
+    expect(clear.status).toBe("failed");
+    expect(clear.error).toBe("gc threw");
+  });
+
+  it("a memory/clear-cache-result for an unknown requestId is ignored, not crashing or creating a phantom entry", () => {
+    seedAppWithPendingCacheClear(pendingCacheClear());
+
+    const result = createEnvelope("memory/clear-cache-result", APP_ID, { requestId: "some-other-request", ok: true });
+    expect(() => useConnectionStore.getState().handleEnvelope(result)).not.toThrow();
+
+    const pendingCacheClears = useConnectionStore.getState().data[APP_ID].pendingCacheClears;
+    expect(pendingCacheClears["creq-1"].status).toBe("pending"); // untouched
+    expect(pendingCacheClears["some-other-request"]).toBeUndefined();
+  });
+
+  it("markDisconnected fails every still-pending cache clear for that app immediately", () => {
+    seedAppWithPendingCacheClear(pendingCacheClear());
+    useConnectionStore.getState().markDisconnected(APP_ID);
+
+    const pendingCacheClears = useConnectionStore.getState().data[APP_ID].pendingCacheClears;
+    expect(pendingCacheClears["creq-1"].status).toBe("failed");
+    expect(pendingCacheClears["creq-1"].error).toBe("App disconnected");
+  });
+
+  it("sendClearCache tracks a new pending entry with no target/value", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    useConnectionStore.getState().sendClearCache(APP_ID);
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingCacheClears);
+    expect(entry.status).toBe("pending");
+    expect(entry.requestId).toMatch(/^cc_/);
+  });
+});

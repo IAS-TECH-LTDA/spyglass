@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { QueryInfo } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
-import { JsonTree } from "../../components/JsonTree";
+import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { CopyButton } from "../../components/CopyButton";
 
 export function QueriesView({ appId }: { appId: string }) {
@@ -84,7 +84,7 @@ function QueryDetail({ query }: { query: QueryInfo }) {
           )}
         </div>
         {query.data !== undefined ? (
-          <JsonTree data={query.data} defaultExpandDepth={2} />
+          <JsonGraph data={query.data} defaultExpandDepth={2} />
         ) : (
           <div className="view-empty">No data yet.</div>
         )}
@@ -93,7 +93,7 @@ function QueryDetail({ query }: { query: QueryInfo }) {
       {query.error !== undefined && (
         <div className="query-section">
           <h4>Error</h4>
-          <JsonTree data={query.error} defaultExpandDepth={2} />
+          <JsonGraph data={query.error} defaultExpandDepth={2} />
         </div>
       )}
     </section>

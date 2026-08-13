@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { NetworkEntry } from "../../state/connection";
 import { useConnectionStore } from "../../state/connection";
 import { CopyButton } from "../../components/CopyButton";
-import { JsonTree } from "../../components/JsonTree";
+import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { toCurl } from "../../lib/curl";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 
@@ -120,6 +120,7 @@ export function NetworkView({ appId }: { appId: string }) {
               <span className={`status-pill ${statusClass(entry)}`}>{statusLabel(entry)}</span>
               <span className="network-method">{entry.method}</span>
               <span className="network-url">{entry.url}</span>
+              <small className="network-time">{formatTime(entry.startedAt)}</small>
               {entry.durationMs !== undefined && <small>{entry.durationMs}ms</small>}
             </button>
           ))}
@@ -134,7 +135,10 @@ export function NetworkView({ appId }: { appId: string }) {
         aria-label="Resize request list"
       />
 
-      {selected && <NetworkDetail entry={selected} />}
+      {/* Keyed by requestId so switching the selected request resets the
+          accordion sections back to their default (open) state instead of
+          carrying over whatever was collapsed for the previous one. */}
+      {selected && <NetworkDetail key={selected.requestId} entry={selected} />}
     </div>
   );
 }
@@ -142,6 +146,8 @@ export function NetworkView({ appId }: { appId: string }) {
 function NetworkDetail({ entry }: { entry: NetworkEntry }) {
   const requestBody = parseBody(entry.requestBody);
   const responseBody = parseBody(entry.responseBody);
+  const [requestOpen, setRequestOpen] = useState(true);
+  const [responseOpen, setResponseOpen] = useState(true);
 
   return (
     <section className="network-detail">
@@ -165,7 +171,7 @@ function NetworkDetail({ entry }: { entry: NetworkEntry }) {
         )}
         <div className="network-meta-row">
           <span>Started</span>
-          <span>{new Date(entry.startedAt).toLocaleTimeString()}</span>
+          <span>{formatTime(entry.startedAt)}</span>
         </div>
         <CopyButton
           className="network-curl-btn"
@@ -175,25 +181,57 @@ function NetworkDetail({ entry }: { entry: NetworkEntry }) {
         <span className="network-curl-label">Copy as cURL</span>
       </div>
 
-      <div className="network-section">
-        <div className="network-section-head">
-          <h4>Request</h4>
-          {requestBody !== undefined && <CopyButton size="sm" title="Copy request body" text={() => JSON.stringify(requestBody, null, 2)} />}
-        </div>
+      <NetworkSection
+        title="Request"
+        open={requestOpen}
+        onToggle={() => setRequestOpen((v) => !v)}
+        copyText={requestBody !== undefined ? () => JSON.stringify(requestBody, null, 2) : undefined}
+      >
         {entry.requestHeaders && Object.keys(entry.requestHeaders).length > 0 && <HeadersTable headers={entry.requestHeaders} />}
-        {requestBody !== undefined && <JsonTree data={requestBody} defaultExpandDepth={1} />}
-      </div>
+        {requestBody !== undefined && <JsonGraph data={requestBody} defaultExpandDepth={1} />}
+      </NetworkSection>
 
-      <div className="network-section">
-        <div className="network-section-head">
-          <h4>Response</h4>
-          {responseBody !== undefined && <CopyButton size="sm" title="Copy response body" text={() => JSON.stringify(responseBody, null, 2)} />}
-        </div>
+      <NetworkSection
+        title="Response"
+        open={responseOpen}
+        onToggle={() => setResponseOpen((v) => !v)}
+        copyText={responseBody !== undefined ? () => JSON.stringify(responseBody, null, 2) : undefined}
+      >
         {entry.error && <p className="network-error">{entry.error}</p>}
         {entry.responseHeaders && Object.keys(entry.responseHeaders).length > 0 && <HeadersTable headers={entry.responseHeaders} />}
-        {responseBody !== undefined && <JsonTree data={responseBody} defaultExpandDepth={1} />}
-      </div>
+        {responseBody !== undefined && <JsonGraph data={responseBody} defaultExpandDepth={1} />}
+      </NetworkSection>
     </section>
+  );
+}
+
+/**
+ * Collapsible "Request"/"Response" block — the JsonGraph diagram inside can
+ * get tall, so collapsing one lets the headers table (or the other section)
+ * stay in view without scrolling past it.
+ */
+function NetworkSection({
+  title,
+  open,
+  onToggle,
+  copyText,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  copyText?: () => string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="network-section">
+      <div className="network-section-head network-section-head-clickable" onClick={onToggle}>
+        <span className={`jt-toggle ${open ? "open" : ""}`}>▸</span>
+        <h4>{title}</h4>
+        {copyText && <CopyButton size="sm" title={`Copy ${title.toLowerCase()} body`} text={copyText} />}
+      </div>
+      {open && <div className="network-section-body">{children}</div>}
+    </div>
   );
 }
 
@@ -225,7 +263,12 @@ function statusLabel(entry: NetworkEntry): string {
   return String(entry.status);
 }
 
-/** Parses a JSON-string body into a real object so JsonTree gets structured data either way. */
+/** HH:MM:SS the request started at — same clock-time shown in the list row and the detail panel's "Started" field. */
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour12: false });
+}
+
+/** Parses a JSON-string body into a real object so JsonGraph gets structured data either way. */
 function parseBody(body: unknown): unknown {
   if (body === undefined) return undefined;
   if (typeof body === "string") {

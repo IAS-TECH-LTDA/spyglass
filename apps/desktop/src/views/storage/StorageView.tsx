@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { applyPatch } from "spyglass-protocol";
 import type { StorageEngine } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
-import { JsonTree } from "../../components/JsonTree";
+import type { PendingWrite } from "../../state/connection";
+import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
+import type { JsonGraphEditable } from "../../components/jsonGraph/JsonGraph";
 import { CopyButton } from "../../components/CopyButton";
+import { toJsonPointer } from "../../lib/jsonPointer";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 import { SchemaDiagram } from "./SchemaDiagram";
 import { inferForeignKeys } from "./inferForeignKeys";
@@ -27,6 +31,10 @@ export function StorageView({ appId }: { appId: string }) {
   const storage = appData?.storage ?? {};
   const engines = Object.keys(storage) as StorageEngine[];
   const [selectedEngine, setSelectedEngine] = useState<StorageEngine | null>(null);
+  // Only advertised by a connected app in dev-style environments (spec 0007)
+  // — absent means either a production build, or an SDK version that
+  // predates this feature. Either way, editing simply isn't offered.
+  const canWrite = useConnectionStore((s) => s.apps[appId]?.capabilities.includes("storage:write") ?? false);
 
   const activeEngine = selectedEngine && storage[selectedEngine] ? selectedEngine : engines[0];
   const snapshot = activeEngine ? storage[activeEngine] : undefined;
@@ -64,13 +72,33 @@ export function StorageView({ appId }: { appId: string }) {
         })}
       </nav>
 
-      {snapshot?.entries && <KvTable entries={snapshot.entries} />}
+      {snapshot?.entries && activeEngine && (
+        <KvTable
+          appId={appId}
+          engine={activeEngine}
+          dbName={snapshot.dbName}
+          entries={snapshot.entries}
+          canWrite={canWrite}
+        />
+      )}
       {snapshot?.schema && snapshot.rows && <RelationalStorage schema={snapshot.schema} rows={snapshot.rows} />}
     </div>
   );
 }
 
-function KvTable({ entries }: { entries: { key: string; value: unknown }[] }) {
+function KvTable({
+  appId,
+  engine,
+  dbName,
+  entries,
+  canWrite,
+}: {
+  appId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  entries: { key: string; value: unknown }[];
+  canWrite: boolean;
+}) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   if (entries.length === 0) return <div className="view-empty">Empty.</div>;
@@ -89,29 +117,129 @@ function KvTable({ entries }: { entries: { key: string; value: unknown }[] }) {
           {entries.map((entry) => {
             const isOpen = expandedKey === entry.key;
             return (
-              <RowGroup
+              <KvRow
                 key={entry.key}
+                appId={appId}
+                engine={engine}
+                dbName={dbName}
+                entry={entry}
                 open={isOpen}
                 onToggle={() => setExpandedKey(isOpen ? null : entry.key)}
-                colSpan={2}
-                summaryCells={
-                  <>
-                    <td className="kv-key">{entry.key}</td>
-                    <td className="kv-preview">{previewValue(entry.value)}</td>
-                  </>
-                }
-              >
-                <div className="row-detail-head">
-                  <span>{entry.key}</span>
-                  <CopyButton size="sm" title="Copy value" text={() => JSON.stringify(entry.value, null, 2)} />
-                </div>
-                <JsonTree data={entry.value} defaultExpandDepth={DETAIL_EXPAND_DEPTH} />
-              </RowGroup>
+                canWrite={canWrite}
+              />
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function KvRow({
+  appId,
+  engine,
+  dbName,
+  entry,
+  open,
+  onToggle,
+  canWrite,
+}: {
+  appId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  entry: { key: string; value: unknown };
+  open: boolean;
+  onToggle: () => void;
+  canWrite: boolean;
+}) {
+  const sendStorageWrite = useConnectionStore((s) => s.sendStorageWrite);
+  const pendingWrites = useConnectionStore((s) => s.data[appId]?.pendingWrites);
+  const [editedPathKey, setEditedPathKey] = useState<string | null>(null);
+  const [rawMode, setRawMode] = useState(false);
+  const [rawDraft, setRawDraft] = useState("");
+  const [rawError, setRawError] = useState<string | null>(null);
+
+  // Most recently sent write to this exact key, if any — drives the status
+  // dot on whichever row was last edited. One in-flight indicator per KV
+  // row at a time is the right level of rigor for a debug tool; it doesn't
+  // need to track every historical edit.
+  const latestWrite = useMemo(() => {
+    if (!pendingWrites) return undefined;
+    let latest: PendingWrite | undefined;
+    for (const w of Object.values(pendingWrites)) {
+      if (w.engine !== engine || w.dbName !== dbName || w.key !== entry.key) continue;
+      if (!latest || w.sentAt > latest.sentAt) latest = w;
+    }
+    return latest;
+  }, [pendingWrites, engine, dbName, entry.key]);
+
+  const handleEdit = (path: (string | number)[], newValue: unknown) => {
+    setEditedPathKey(path.join("."));
+    const updatedValue = path.length === 0 ? newValue : applyPatch(entry.value, [{ op: "replace", path: toJsonPointer(path), value: newValue }]);
+    sendStorageWrite(appId, engine, dbName, entry.key, "set", updatedValue);
+  };
+
+  const editable: JsonGraphEditable | undefined = canWrite
+    ? { onEdit: handleEdit, status: editedPathKey && latestWrite ? { [editedPathKey]: latestWrite.status } : undefined }
+    : undefined;
+
+  const openRawEditor = () => {
+    setRawDraft(JSON.stringify(entry.value, null, 2));
+    setRawError(null);
+    setRawMode(true);
+  };
+
+  const saveRawEditor = () => {
+    try {
+      const parsed = JSON.parse(rawDraft);
+      setEditedPathKey("");
+      sendStorageWrite(appId, engine, dbName, entry.key, "set", parsed);
+      setRawMode(false);
+      setRawError(null);
+    } catch (err) {
+      setRawError(err instanceof Error ? err.message : "Invalid JSON");
+    }
+  };
+
+  return (
+    <RowGroup
+      open={open}
+      onToggle={onToggle}
+      colSpan={2}
+      summaryCells={
+        <>
+          <td className="kv-key">{entry.key}</td>
+          <td className="kv-preview">{previewValue(entry.value)}</td>
+        </>
+      }
+    >
+      <div className="row-detail-head">
+        <span>{entry.key}</span>
+        {canWrite && (
+          <button type="button" className="kv-raw-toggle" onClick={() => (rawMode ? setRawMode(false) : openRawEditor())}>
+            {rawMode ? "Cancel" : "Edit raw JSON"}
+          </button>
+        )}
+        <CopyButton size="sm" title="Copy value" text={() => JSON.stringify(entry.value, null, 2)} />
+      </div>
+      {rawMode ? (
+        <div className="kv-raw-editor">
+          <textarea
+            className="kv-raw-textarea"
+            value={rawDraft}
+            onChange={(e) => setRawDraft(e.target.value)}
+            spellCheck={false}
+            autoFocus
+          />
+          {rawError && <p className="kv-raw-error">{rawError}</p>}
+          <button type="button" className="btn-accent" onClick={saveRawEditor}>
+            Save
+          </button>
+        </div>
+      ) : (
+        <JsonGraph data={entry.value} defaultExpandDepth={DETAIL_EXPAND_DEPTH} editable={editable} />
+      )}
+    </RowGroup>
   );
 }
 
@@ -320,7 +448,8 @@ function Cell({
 
   const parsed = parseCellValue(value);
   if (parsed !== value) {
-    return <JsonTree data={parsed} defaultExpandDepth={detailed ? DETAIL_EXPAND_DEPTH : 0} />;
+    // Narrow detail panel — keep the canvas compact even when a deep value expands into a real graph.
+    return <JsonGraph data={parsed} defaultExpandDepth={detailed ? DETAIL_EXPAND_DEPTH : 0} height={detailed ? 220 : undefined} />;
   }
 
   return <>{String(value)}</>;

@@ -21,6 +21,9 @@ _(nenhum item pendente)_
 | 0003 | Preparação para publicação no npm + tela de conexão do desktop | [0003-publicacao-npm.md](specs/0003-publicacao-npm.md) | 6 | 3 | 100% | 2 | 9.0 | Commit inicial + remote do repositório; validação manual do tarball e do publish |
 | 0004 | Auto-attach de Console, Network e Performance em dev | [0004-auto-attach-console-network-performance.md](specs/0004-auto-attach-console-network-performance.md) | 9 | 2 | 90% | 1.5 | 10.8 | Validação manual ao vivo (repetir a integração desta sessão num app real) |
 | 0005 | Alertas (som, badge in-app, notificação nativa) para erros | [0005-alertas-erro.md](specs/0005-alertas-erro.md) | 8 | 3 | 80% | 4 | 4.8 | Validação manual ao vivo numa máquina real (permissão, notificação em segundo plano, som, rajada, reconexão) |
+| 0006 | Visualizador de JSON em diagrama de nós | [0006-visualizador-json-diagrama.md](specs/0006-visualizador-json-diagrama.md) | 9 | 2 | 90% | 4 | 4.1 | Validação manual ao vivo nas 8 telas trocadas, incluindo payload grande (fallback) e canvas embutido em painel |
+| 0007 | Escrita ao vivo em Storage KV a partir do desktop | [0007-escrita-storage-desktop.md](specs/0007-escrita-storage-desktop.md) | 5 | 2 | 70% | 5 | 1.4 | Depende da 0006; validação manual ao vivo com AsyncStorage/MMKV/web-storage reais, incluindo desconexão em pleno write |
+| 0008 | Monitoramento de memória/armazenamento/swap do device e do app + limpar caches | [0008-monitoramento-memoria-dispositivo.md](specs/0008-monitoramento-memoria-dispositivo.md) | 5 | 2 | 80% | 6 | 1.3 | Validação manual ao vivo em device Android real + Simulator iOS; sem suporte a device físico iOS (ver Fora de escopo) |
 
 ## Entregue
 

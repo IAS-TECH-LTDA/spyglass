@@ -56,6 +56,8 @@ Before running it: bump the version in both `package.json`s to the same value (t
 
 Every message on the wire is an `Envelope<T>` (`packages/protocol/src/types.ts`): `{ v, type, appId, ts, payload }`, where `type` is one of a fixed `MessageType` union (`hello`, `nav/state`, `state/action`, `storage/snapshot`, `log/entry`, `network/request`, etc.) and `payload` is the matching interface from `PayloadByType`. Keep `packages/protocol/src/types.ts` free of RN/Tauri/Node dependencies — it's imported directly by both the SDK (RN runtime) and the desktop UI (webview), and the Rust structs in `apps/desktop/src-tauri/src/registry.rs` are hand-mirrored from it (`serde(rename_all = "camelCase")`), so a shape change there needs a matching Rust edit.
 
+The protocol is overwhelmingly SDK -> Desktop, with one deliberate exception: `storage/write`/`storage/write-result` (spec 0007) flow Desktop -> SDK, letting the desktop's Storage KV editor write a value back into the connected app live. Dev-only — the SDK doesn't register a handler for it outside a dev-style environment (see `InitOptions.allowRemoteWrites` in `packages/sdk/src/index.ts`), and it's the only pair the Rust WS server (`ws_server.rs`) ever sends back down a connection instead of just forwarding to the frontend.
+
 `packages/protocol` also owns:
 - `envelope.ts` — `createEnvelope`, `encodeEnvelope`/`decodeEnvelope` (JSON wire format).
 - `serialize.ts` — `safeSerialize`/`hashValue`, which bound payload size (`MAX_VALUE_SIZE`, `MAX_SERIALIZE_DEPTH`) and mark oversized/circular values with `TruncatedValue` instead of throwing or blowing up the socket.

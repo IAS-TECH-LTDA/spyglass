@@ -1,4 +1,11 @@
+import { MAX_PATCH_PATH_SEGMENTS } from "./constants.js";
 import type { JsonPatchOp } from "./types.js";
+
+// Keys that can reach a prototype instead of a plain data property when
+// assigned via bracket notation (`obj[key] = ...`). `applyPatch` runs on
+// data that arrived over an unauthenticated LAN WebSocket, so a patch is
+// attacker-controlled input, not just data this process produced itself.
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /**
  * Computes a minimal-effort JSON Patch (RFC 6902 subset: add/replace/remove)
@@ -84,6 +91,10 @@ function unescapePointer(segment: string): string {
  * `state/init` snapshot plus the stream of `state/action` diffs.
  */
 export function applyPatch(value: unknown, ops: JsonPatchOp[]): unknown {
+  // `ops` comes straight off the wire (see doc comment above) — a
+  // malformed/non-array `diff` must fail safe (leave state untouched)
+  // rather than throw `ops is not iterable` into an unguarded reducer.
+  if (!Array.isArray(ops)) return value;
   let result = value;
   for (const op of ops) {
     result = applyOp(result, op);
@@ -92,7 +103,11 @@ export function applyPatch(value: unknown, ops: JsonPatchOp[]): unknown {
 }
 
 function applyOp(root: unknown, op: JsonPatchOp): unknown {
+  if (!op || typeof op.path !== "string") return root;
   const segments = op.path === "/" || op.path === "" ? [] : op.path.split("/").slice(1).map(unescapePointer);
+  // See MAX_PATCH_PATH_SEGMENTS's doc comment — a path this long can only be
+  // malformed/malicious input, never a real diff produced by diffValues.
+  if (segments.length > MAX_PATCH_PATH_SEGMENTS) return root;
   return setAtPath(root, segments, op);
 }
 
@@ -105,15 +120,33 @@ function setAtPath(node: unknown, segments: string[], op: JsonPatchOp): unknown 
 
   if (Array.isArray(node)) {
     const index = Number(head);
+    // Reject non-integer/out-of-range indices instead of letting `copy[index]
+    // = value` create a sparse array out to an attacker-chosen length (a
+    // single patch could otherwise inflate an array to billions of slots).
+    // `index === node.length` is allowed (append), matching what a
+    // legitimate same-length diffArrays replace can produce.
+    if (!Number.isInteger(index) || index < 0 || index > node.length) return node;
     const copy = node.slice();
     if (rest.length === 0) {
-      if (op.op === "remove") copy.splice(index, 1);
-      else copy[index] = op.value;
+      if (op.op === "remove") {
+        if (index < copy.length) copy.splice(index, 1);
+      } else {
+        copy[index] = op.value;
+      }
     } else {
+      if (index >= copy.length) return node; // nothing to descend into
       copy[index] = setAtPath(copy[index], rest, op);
     }
     return copy;
   }
+
+  // A key of `__proto__`/`constructor`/`prototype` would otherwise reach
+  // `copy[head] = ...` below and, for `__proto__` specifically, invoke the
+  // inherited setter and replace this node's own prototype (confirmed:
+  // Object.prototype itself stays clean, since `copy` is always a freshly
+  // spread `{}` — but the affected node's `hasOwnProperty`/`Object.keys`
+  // behavior breaks). Treat it as a no-op instead of a valid write target.
+  if (UNSAFE_KEYS.has(head)) return node;
 
   const obj = node && typeof node === "object" ? (node as Record<string, unknown>) : {};
   const copy = { ...obj };

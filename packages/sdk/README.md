@@ -100,11 +100,10 @@ under `<BrowserRouter>`, and `useSpyglassRecoil(atoms)` under
 ### Auto-attached by default
 
 `attachConsole()`, `attachNetwork()` and `attachPerformance()` need no
-app-specific reference — unlike navigation/state/storage adapters, there's
-nothing only your code could hand over — so `init()` attaches all three for
-you automatically, in dev-style environments only (`__DEV__`, or
-`NODE_ENV !== "production"`), off in production. Override with
-`autoAttach`:
+app-specific reference — there's nothing only your code could hand over —
+so `init()` attaches all three for you automatically, in dev-style
+environments only (`__DEV__`, or `NODE_ENV !== "production"`), off in
+production. Override with `autoAttach`:
 
 ```ts
 init({ appName: "MyApp", autoAttach: false });                    // none of the three
@@ -119,6 +118,65 @@ this if you need to pass the adapter its own options (e.g.
 doesn't support in v1: turn off auto-attach for that one capability and
 call the adapter manually instead.
 
+`autoAttach.storage.asyncStorage`/`.webStorage` extend the same mechanism
+to two storage engines — the only two with exactly one real instance per
+app, so there's nothing to hand over there either:
+
+```ts
+init({ appName: "MyApp", autoAttach: { storage: { asyncStorage: true } } });
+```
+
+`asyncStorage` dynamically imports `@react-native-async-storage/async-storage`
+itself (silently skipped if it isn't installed — same as any other optional
+peer dependency); `webStorage` attaches `window.localStorage` **and**
+`window.sessionStorage` when present. Both follow the same dev-default/
+`autoAttach: true|false` override rules as console/network/performance.
+
+`autoAttach.state.zustand` goes one step further and is **best-effort**: it
+patches zustand's own `create` export, so every store the app makes
+afterwards is auto-wrapped with `withSpyglass(...)` — no per-store code
+change at all.
+
+```ts
+init({ appName: "MyApp", autoAttach: { state: { zustand: true } } });
+```
+
+Two things worth knowing before you rely on it:
+
+- **Not guaranteed everywhere.** Reassigning a named ES module export is
+  only a mutable operation under some bundlers' CJS interop — React
+  Native's Metro (this SDK's primary target) is one; a web app bundled by
+  Vite/Rollup in strict ESM is not. When the reassignment isn't possible,
+  this fails safe: no throw, the capability is just never advertised, and
+  `withSpyglass(...)` stays available as the reliable explicit wrap.
+- **Timing**: only stores created *after* the patch takes effect are
+  instrumented — installing it needs an `await import("zustand")` first,
+  so a store created synchronously in the very same tick as `init()` (e.g.
+  at module top level, imported before that resolves) can be missed. Wrap
+  that one explicitly if it happens.
+
+Each auto-wrapped store gets its own generated `storeId` (`zustand#1`,
+`zustand#2`, ...) since `create()` carries no name to reuse — pass
+`storeId`/`label` to `withSpyglass(...)` yourself if you want a
+recognizable name in the desktop instead.
+
+### Why not every adapter?
+
+Only `console`/`network`/`performance`/`storage.asyncStorage`/
+`storage.webStorage`/`state.zustand` can be zero-config. Everything else in
+the table below still needs one `attachX(...)` call, for a real reason in
+each case, not because auto-detecting it was skipped:
+
+- **Navigation** always needs the `<NavigationContainer>` ref — there's no
+  registry to discover it from.
+- **Redux/Jotai/Recoil/MobX** — each app constructs its store/atoms its own
+  way (`configureStore`, a custom enhancer chain, ad-hoc atoms); there's no
+  single factory to hook into like there is for zustand's `create()`.
+- **MMKV/SQLite/Realm/WatermelonDB** each have app-specific construction
+  (an encryption key, a db path, possibly multiple instances) — the SDK
+  auto-creating its own instance to "guess" wouldn't show your app's real
+  data, and could actively mislead you into thinking it does.
+
 ## Adapters
 
 Each subpath wraps one library's own API — attach only the ones you use.
@@ -128,16 +186,16 @@ Each subpath wraps one library's own API — attach only the ones you use.
 | `spyglass-react/navigation` | `attachNavigation` | React Navigation |
 | `spyglass-react/navigation/react-router` | `useSpyglassReactRouter` | React Router (web) |
 | `spyglass-react/state/redux` | `createSpyglassReduxMiddleware` | Redux |
-| `spyglass-react/state/zustand` | `withSpyglass` | Zustand |
+| `spyglass-react/state/zustand` | `withSpyglass` | Zustand (also available via `autoAttach.state.zustand` — best-effort, no manual call needed) |
 | `spyglass-react/state/jotai` | `attachJotai` | Jotai |
 | `spyglass-react/state/recoil` | `useSpyglassRecoil` | Recoil |
 | `spyglass-react/state/mobx` | `attachMobx` | MobX |
-| `spyglass-react/storage/async-storage` | `attachAsyncStorage` | `@react-native-async-storage/async-storage` |
+| `spyglass-react/storage/async-storage` | `attachAsyncStorage` | `@react-native-async-storage/async-storage` (also available via `autoAttach.storage.asyncStorage` — no manual call needed) |
 | `spyglass-react/storage/mmkv` | `attachMmkv` | `react-native-mmkv` |
 | `spyglass-react/storage/sqlite` | `attachSqlite` | SQLite (expo-sqlite or another driver — pass a runner) |
 | `spyglass-react/storage/realm` | `attachRealm` | Realm |
 | `spyglass-react/storage/watermelondb` | `attachWatermelonDB` | WatermelonDB |
-| `spyglass-react/storage/web-storage` | `attachWebStorage` | `localStorage`/`sessionStorage` |
+| `spyglass-react/storage/web-storage` | `attachWebStorage` | `localStorage`/`sessionStorage` (also available via `autoAttach.storage.webStorage` — no manual call needed) |
 | `spyglass-react/query/react-query` | `attachReactQuery` | TanStack Query |
 | `spyglass-react/console` | `attachConsole` | `console.log/info/warn/error/debug` |
 | `spyglass-react/network` | `attachNetwork` | `fetch`/`XMLHttpRequest` |
@@ -146,6 +204,55 @@ Each subpath wraps one library's own API — attach only the ones you use.
 Every library above is an optional peer dependency — the SDK reaches them via
 dynamic `import()` or a value you pass in, never a static import, so you
 never need to install adapters you don't use.
+
+## Live editing from the desktop
+
+Three things the desktop app can do to your *running* app, not just read
+from it — every one gated behind `allowRemoteWrites` (on by default in
+dev-style environments, **never** forced on in production, see
+[`InitOptions`](#initoptions) below):
+
+| What | Where in the desktop | Requires | Capability advertised |
+|---|---|---|---|
+| Edit a Storage KV value | Storage tab, click a field | `attachAsyncStorage`/`attachMmkv`/`attachWebStorage` (or the storage `autoAttach`) | `storage:write` |
+| Edit a Zustand store's state | Stores tab, click a field | `withSpyglass(...)` or `autoAttach.state.zustand` | `state:write` |
+| "Clear app caches" | Performance tab's Memory panel | nothing — always available once the gate is on | `memory:clear-cache` |
+
+None of this needs new code beyond attaching the adapter you'd already want
+for the *read* side — editing reuses the exact same connection.
+
+**Storage/Zustand edits never apply optimistically.** The desktop sends the
+edit, shows "pending", and only flips to "applied" once the app itself
+confirms it (an ack, or — for storage — the app's own change event
+reporting the same value). A disconnect or a 3s timeout with no response
+shows "failed" instead of silently doing nothing.
+
+**Zustand edits are a shallow merge, not a replace.** The desktop only ever
+sees your store's serialized *data*, never its action functions — a full
+replace would wipe `increment`/`reset`/etc. off the store. Editing a nested
+field reconstructs the whole state around that one field and merges it in
+via the store's own `set()`, the same path an organic `set()` call takes —
+so the edit shows up as a normal state update, not a special case.
+
+**"Clear app caches" is exactly what it says, not "free memory".** No
+third-party app — on iOS or Android — can ask the OS to release memory back
+to it; that's a one-way street (`onTrimMemory`/`didReceiveMemoryWarning`
+are the OS telling *you*, not something you can invoke). The button:
+
+1. Calls `global.gc()` if the JS engine exposes it (Hermes does, in
+   production builds too — this frees the JS heap only, typically a small
+   fraction of the app's total memory).
+2. Clears [`expo-image`](https://docs.expo.dev/versions/latest/sdk/image/)'s
+   memory + disk cache, if the package is installed (optional peer
+   dependency, reached the same dynamic-`import()` way as every other
+   adapter — nothing to configure if you don't use it, nothing happens if
+   you don't have it installed).
+
+The Memory panel's actual *readings* (device total memory, the app's
+memory/swap) are a **desktop-only** feature — the numbers come from `adb`/
+`footprint` run by the desktop app itself, not from anything this SDK
+reports over the wire. There's nothing to attach or configure in your app
+for that half of the panel.
 
 ## Connecting from a device
 
@@ -201,7 +308,8 @@ on outside of dev.
 | `rnVersion` | `string` | — | Not auto-detected; pass it if you want it shown. |
 | `initialConnectDelayMs` | `number` | — | Workaround for a physical-iOS-device boot quirk — see the source comment on `TransportOptions.initialConnectDelayMs`. Not needed on Android or the Simulator. |
 | `diagnostics` | `boolean` | on in dev, off in production-style environments | See "Not connecting?" above. |
-| `autoAttach` | `boolean \| { console?, network?, performance? }` | on in dev, off in production-style environments | See "Auto-attached by default" above. |
+| `autoAttach` | `boolean \| { console?, network?, performance?, storage?: { asyncStorage?, webStorage? }, state?: { zustand? } }` | on in dev, off in production-style environments | See "Auto-attached by default" above. `state.zustand` is best-effort — see the caveats there. |
+| `allowRemoteWrites` | `boolean` | on in dev, **never** forced on in production | Lets the desktop write into this app live: the Storage editor (spec 0007), the Stores editor for Zustand (spec 0007-state), and the Memory panel's "Clear caches" button (spec 0008 — runs a Hermes GC + clears `expo-image`'s cache if installed; can't free memory system-wide, no third-party app can ask the OS for that). `false` disables even in dev; `true` does *not* force it on in production — see the source comment on `InitOptions.allowRemoteWrites`. |
 
 ## License
 

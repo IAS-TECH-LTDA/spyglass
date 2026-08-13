@@ -68,9 +68,14 @@ fn now_ms() -> u64 {
 
 /// Serials come from adb's own stdout, and every command here is argv-only
 /// (never a shell), so this is defense in depth rather than the only thing
-/// standing between adb's output and a spawned process.
+/// standing between adb's output and a spawned process. Also reject a
+/// leading `-`: every call site passes the serial as a bare argv element
+/// (`["-s", serial, ...]`), and without this a serial string could
+/// otherwise be interpreted as a flag rather than adb's `-s` argument.
 fn is_valid_serial(serial: &str) -> bool {
-    !serial.is_empty() && serial.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+    !serial.is_empty()
+        && !serial.starts_with('-')
+        && serial.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
 }
 
 #[cfg(windows)]
@@ -349,6 +354,182 @@ pub async fn retry_adb_reverse(app_handle: AppHandle, status: tauri::State<'_, A
     Ok(snapshot)
 }
 
+// ---------------------------------------------------------------------------
+// Android memory (spec 0008) — on-demand, called only while the desktop's
+// Memory panel is mounted (unlike the always-on `adb reverse` watcher
+// above). Every command here re-locates `adb` and re-validates its own
+// inputs rather than sharing state with the watcher, since these are rare,
+// user-driven, one-shot reads, not a background loop.
+// ---------------------------------------------------------------------------
+
+/// Same character allowlist as `is_valid_serial`, minus the adb-serial-only
+/// punctuation (`:`) an Android package name never contains — an Android
+/// package/application id is always `[a-zA-Z0-9_.]+` by platform convention,
+/// and rejecting anything else here is defense in depth: `package` reaches
+/// `run_adb` as its own argv element (never a shell), so this isn't the only
+/// thing standing between it and the spawned process, but a leading `-`
+/// could otherwise be read as a flag by `dumpsys`/`pm` rather than a name.
+fn is_valid_package(package: &str) -> bool {
+    !package.is_empty()
+        && !package.starts_with('-')
+        && package.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_'))
+}
+
+fn adb_path_or_err() -> Result<PathBuf, String> {
+    find_adb().ok_or_else(|| {
+        "adb not found — looked in $SPYGLASS_ADB_PATH, $ANDROID_HOME, $ANDROID_SDK_ROOT, PATH, and the default SDK install location.".to_string()
+    })
+}
+
+/// `adb shell pm list packages -3` output is one `package:<id>` per line —
+/// `-3` scopes to third-party (non-system) packages, which is what a
+/// developer's own RN app always is.
+fn parse_package_list(output: &str) -> Vec<String> {
+    output.lines().filter_map(|line| line.trim().strip_prefix("package:")).map(|s| s.to_string()).collect()
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ForegroundSuggestion {
+    pub pid: u32,
+    pub package: String,
+}
+
+/// Parses `adb shell dumpsys activity lru` for the foreground process — the
+/// line whose process-state token is exactly `TOP`, e.g.:
+/// `  #29: fg     TOP  LCMNFUA 5796:com.iastech.deojj/u0a209 act:activities|recents`
+/// This is a *suggestion* only (see spec 0008's "Riscos e dependências"):
+/// split-screen can produce two `TOP` lines (first one wins, arbitrarily),
+/// and under Expo Go the package is always `host.exp.exponent`, not the
+/// developer's own app — the desktop still lets the user override the pick.
+fn parse_foreground_from_lru(output: &str) -> Option<ForegroundSuggestion> {
+    for line in output.lines() {
+        if !line.split_whitespace().any(|t| t == "TOP") {
+            continue;
+        }
+        for token in line.split_whitespace() {
+            let Some(colon_idx) = token.find(':') else { continue };
+            let (pid_str, rest) = token.split_at(colon_idx);
+            let Ok(pid) = pid_str.parse::<u32>() else { continue };
+            let package = rest[1..].split('/').next().unwrap_or("");
+            if !package.is_empty() {
+                return Some(ForegroundSuggestion { pid, package: package.to_string() });
+            }
+        }
+    }
+    None
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemMemoryInfo {
+    pub total_kb: u64,
+    pub available_kb: u64,
+}
+
+fn parse_kb_field(value: &str) -> u64 {
+    value.trim().split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+/// Parses `adb shell cat /proc/meminfo` — a stable, kernel-defined format
+/// (`Key:      12345 kB` per line) that hasn't changed shape in a decade,
+/// unlike `dumpsys meminfo`'s human-formatted summary below. `MemAvailable`
+/// (not `MemFree`) is what actually answers "how much can I allocate" —
+/// `MemFree` alone ignores reclaimable cache.
+fn parse_proc_meminfo(output: &str) -> SystemMemoryInfo {
+    let mut total_kb = 0;
+    let mut available_kb = 0;
+    for line in output.lines() {
+        if let Some(rest) = line.strip_prefix("MemTotal:") {
+            total_kb = parse_kb_field(rest);
+        } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+            available_kb = parse_kb_field(rest);
+        }
+    }
+    SystemMemoryInfo { total_kb, available_kb }
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AppMemoryInfo {
+    /// Physical + already-swapped pages combined (Android's own PSS
+    /// accounting folds swap in) — see `total_swap_pss_kb` to break it back
+    /// out. `None` if the label wasn't found at all (malformed/unexpected
+    /// `dumpsys` output).
+    pub total_pss_kb: Option<u64>,
+    /// Resident-only (excludes swap) — added in a later Android release
+    /// than `total_pss_kb`, so treat as optional even on a healthy read.
+    pub total_rss_kb: Option<u64>,
+    pub total_swap_pss_kb: Option<u64>,
+}
+
+/// Finds `label` in `text` and returns the next whitespace-delimited integer
+/// token after it. `dumpsys meminfo`'s summary line packs three `Label:
+/// value` groups together with variable-width padding between them (and
+/// that padding itself differs across devices/Android versions) — so this
+/// deliberately scans for the label text rather than parsing fixed columns.
+fn extract_after_label(text: &str, label: &str) -> Option<u64> {
+    let idx = text.find(label)?;
+    text[idx + label.len()..].split_whitespace().next()?.parse().ok()
+}
+
+/// Parses `adb shell dumpsys meminfo <package>`'s one-line summary, e.g.:
+/// `           TOTAL PSS:   690422            TOTAL RSS:   346368       TOTAL SWAP PSS:   430328`
+/// Falls back to the older Android 8/9-era labels (`TOTAL:` instead of
+/// `TOTAL PSS:`, `TOTAL SWAP (KB):` instead of `TOTAL SWAP PSS:`) — see spec
+/// 0008's "Riscos e dependências" for why this can't assume one fixed
+/// format across the Android versions this tool will see in the wild.
+fn parse_dumpsys_meminfo(output: &str) -> AppMemoryInfo {
+    let total_pss_kb = extract_after_label(output, "TOTAL PSS:").or_else(|| extract_after_label(output, "TOTAL:"));
+    let total_rss_kb = extract_after_label(output, "TOTAL RSS:");
+    let total_swap_pss_kb =
+        extract_after_label(output, "TOTAL SWAP PSS:").or_else(|| extract_after_label(output, "TOTAL SWAP (KB):"));
+    AppMemoryInfo { total_pss_kb, total_rss_kb, total_swap_pss_kb }
+}
+
+#[tauri::command]
+pub async fn list_third_party_packages(serial: String) -> Result<Vec<String>, String> {
+    if !is_valid_serial(&serial) {
+        return Err("invalid device serial".to_string());
+    }
+    let adb_path = adb_path_or_err()?;
+    let output = run_adb(&adb_path, &["-s", &serial, "shell", "pm", "list", "packages", "-3"]).await?;
+    Ok(parse_package_list(&output))
+}
+
+#[tauri::command]
+pub async fn suggest_foreground_package(serial: String) -> Result<Option<ForegroundSuggestion>, String> {
+    if !is_valid_serial(&serial) {
+        return Err("invalid device serial".to_string());
+    }
+    let adb_path = adb_path_or_err()?;
+    let output = run_adb(&adb_path, &["-s", &serial, "shell", "dumpsys", "activity", "lru"]).await?;
+    Ok(parse_foreground_from_lru(&output))
+}
+
+#[tauri::command]
+pub async fn read_system_memory(serial: String) -> Result<SystemMemoryInfo, String> {
+    if !is_valid_serial(&serial) {
+        return Err("invalid device serial".to_string());
+    }
+    let adb_path = adb_path_or_err()?;
+    let output = run_adb(&adb_path, &["-s", &serial, "shell", "cat", "/proc/meminfo"]).await?;
+    Ok(parse_proc_meminfo(&output))
+}
+
+#[tauri::command]
+pub async fn read_app_memory(serial: String, package: String) -> Result<AppMemoryInfo, String> {
+    if !is_valid_serial(&serial) {
+        return Err("invalid device serial".to_string());
+    }
+    if !is_valid_package(&package) {
+        return Err("invalid package name".to_string());
+    }
+    let adb_path = adb_path_or_err()?;
+    let output = run_adb(&adb_path, &["-s", &serial, "shell", "dumpsys", "meminfo", &package]).await?;
+    Ok(parse_dumpsys_meminfo(&output))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +589,107 @@ mod tests {
 
         let c = AdbStatus { checked_at: 2, state: "ok".to_string(), ..AdbStatus::default() };
         assert!(meaningfully_changed(&a, &c));
+    }
+
+    // -- spec 0008: Android memory --------------------------------------
+
+    #[test]
+    fn rejects_malicious_or_malformed_packages() {
+        assert!(!is_valid_package(""));
+        assert!(!is_valid_package("-rf"));
+        assert!(!is_valid_package("com.example; rm -rf /"));
+        assert!(!is_valid_package("com.example/x"));
+    }
+
+    #[test]
+    fn accepts_realistic_packages() {
+        assert!(is_valid_package("com.iastech.deojj"));
+        assert!(is_valid_package("host.exp.exponent"));
+        assert!(is_valid_package("com.example.app_debug"));
+    }
+
+    #[test]
+    fn parses_third_party_package_list() {
+        let output = "package:com.google.android.gms\npackage:com.iastech.deojj\npackage:host.exp.exponent\n";
+        assert_eq!(
+            parse_package_list(output),
+            vec!["com.google.android.gms".to_string(), "com.iastech.deojj".to_string(), "host.exp.exponent".to_string()]
+        );
+    }
+
+    #[test]
+    fn parses_empty_package_list() {
+        assert_eq!(parse_package_list(""), Vec::<String>::new());
+    }
+
+    // Captured live from `adb shell dumpsys activity lru` on an Android 15
+    // emulator (see spec 0008's research) — `mResumedActivity` (the command
+    // originally planned) doesn't exist on this API level at all.
+    #[test]
+    fn finds_the_top_process_in_lru_output() {
+        let output = "  #29: fg     TOP  LCMNFUA 5796:com.iastech.deojj/u0a209 act:activities|recents\n  #28: vis    BFGS ---NFU- 1321:com.google.android.apps.nexuslauncher/u0a174\n";
+        assert_eq!(
+            parse_foreground_from_lru(output),
+            Some(ForegroundSuggestion { pid: 5796, package: "com.iastech.deojj".to_string() })
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_top_process_is_present() {
+        let output = "  #28: vis    BFGS ---NFU- 1321:com.google.android.apps.nexuslauncher/u0a174\n";
+        assert_eq!(parse_foreground_from_lru(output), None);
+    }
+
+    #[test]
+    fn returns_none_on_empty_lru_output() {
+        assert_eq!(parse_foreground_from_lru(""), None);
+    }
+
+    // Captured live from `adb shell cat /proc/meminfo` on the same emulator.
+    #[test]
+    fn parses_proc_meminfo() {
+        let output = "MemTotal:        2046784 kB\nMemFree:          283904 kB\nMemAvailable:     324960 kB\n";
+        let info = parse_proc_meminfo(output);
+        assert_eq!(info.total_kb, 2046784);
+        assert_eq!(info.available_kb, 324960);
+    }
+
+    #[test]
+    fn proc_meminfo_defaults_to_zero_on_malformed_input() {
+        let info = parse_proc_meminfo("garbage, not meminfo at all");
+        assert_eq!(info.total_kb, 0);
+        assert_eq!(info.available_kb, 0);
+    }
+
+    // Captured live from `adb shell dumpsys meminfo <pkg>` on the same
+    // emulator (Android 15 / API 35) — the current label set.
+    #[test]
+    fn parses_dumpsys_meminfo_current_format() {
+        let output = "           TOTAL PSS:   690422            TOTAL RSS:   346368       TOTAL SWAP PSS:   430328\n";
+        let info = parse_dumpsys_meminfo(output);
+        assert_eq!(info.total_pss_kb, Some(690422));
+        assert_eq!(info.total_rss_kb, Some(346368));
+        assert_eq!(info.total_swap_pss_kb, Some(430328));
+    }
+
+    // Representative of the older Android 8/9-era label set described in
+    // spec 0008's research (`TOTAL:` / `TOTAL SWAP (KB):`, no `TOTAL RSS`
+    // at all) — reconstructed from the documented format drift, not a live
+    // capture (no pre-11 device was available to verify against).
+    #[test]
+    fn parses_dumpsys_meminfo_legacy_format() {
+        let output = "                   TOTAL:    45210        TOTAL SWAP (KB):     1024\n";
+        let info = parse_dumpsys_meminfo(output);
+        assert_eq!(info.total_pss_kb, Some(45210));
+        assert_eq!(info.total_rss_kb, None); // not reported pre-11
+        assert_eq!(info.total_swap_pss_kb, Some(1024));
+    }
+
+    #[test]
+    fn dumpsys_meminfo_fields_are_none_on_malformed_input() {
+        let info = parse_dumpsys_meminfo("garbage, not dumpsys meminfo at all");
+        assert_eq!(info.total_pss_kb, None);
+        assert_eq!(info.total_rss_kb, None);
+        assert_eq!(info.total_swap_pss_kb, None);
     }
 }

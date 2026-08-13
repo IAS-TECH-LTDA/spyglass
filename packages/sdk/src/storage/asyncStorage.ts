@@ -1,7 +1,8 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageSnapshotPayload } from "spyglass-protocol";
+import { registerStorageWriteHandler } from "../commands.js";
 import { getCore } from "../core.js";
-import { parseMaybeJson } from "./shared.js";
+import { parseMaybeJson, serializeForKv } from "./shared.js";
 
 /** Structural subset of `@react-native-async-storage/async-storage`'s default export. */
 interface AsyncStorageLike {
@@ -104,6 +105,16 @@ export function attachAsyncStorage(
     };
   }
 
+  // Routes an inbound `storage/write` (spec 0007, dev-only — see
+  // InitOptions.allowRemoteWrites) through `AsyncStorage.setItem`/`removeItem`
+  // as patched above, not `original.*` — so a desktop-initiated write emits
+  // the exact same `storage/change` echo a normal app write would, with no
+  // separate notification path to keep in sync.
+  const unregisterWrite = registerStorageWriteHandler("asyncStorage", options.dbName, async (op, key, value) => {
+    if (op === "remove") await AsyncStorage.removeItem(key);
+    else await AsyncStorage.setItem(key, serializeForKv(value));
+  });
+
   return () => {
     AsyncStorage.setItem = original.setItem;
     AsyncStorage.removeItem = original.removeItem;
@@ -111,5 +122,6 @@ export function attachAsyncStorage(
     AsyncStorage.multiRemove = original.multiRemove;
     if (original.mergeItem) AsyncStorage.mergeItem = original.mergeItem;
     if (original.clear) AsyncStorage.clear = original.clear;
+    unregisterWrite();
   };
 }

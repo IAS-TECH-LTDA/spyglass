@@ -14,7 +14,10 @@ export function toCurl(entry: CurlSource): string {
   const parts: string[] = ["curl"];
 
   if (entry.method && entry.method.toUpperCase() !== "GET") {
-    parts.push(`-X ${entry.method.toUpperCase()}`);
+    // `method` is wire data (an attacker-controlled string, in principle) —
+    // quote it like every other interpolated value instead of trusting it
+    // has no shell metacharacters after `.toUpperCase()`.
+    parts.push(`-X ${shellQuote(entry.method.toUpperCase())}`);
   }
 
   parts.push(shellQuote(entry.url));

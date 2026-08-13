@@ -1,12 +1,16 @@
 import { createEnvelope, DEFAULT_HOST, DEFAULT_PORT, HEARTBEAT_INTERVAL_MS } from "spyglass-protocol";
 import type { Capability, Framework, HelloPayload, Platform } from "spyglass-protocol";
+import { enableInboundCommands } from "./commands.js";
 import { attachConsole } from "./console.js";
-import { setCore } from "./core.js";
+import { getCore, setCore } from "./core.js";
 import { createDiagnostics } from "./diagnostics.js";
 import { isDevEnvironment } from "./env.js";
 import { attachNetwork } from "./network.js";
 import { attachPerformance } from "./performance.js";
 import { loadPlatform } from "./reactNative.js";
+import { tryAutoAttachZustand } from "./state/autoAttachZustand.js";
+import { attachAsyncStorage } from "./storage/asyncStorage.js";
+import { attachWebStorage } from "./storage/webStorage.js";
 import { createDevHostResolver, warmDevHost } from "./transport/devHost.js";
 import { Transport } from "./transport/ws.js";
 
@@ -16,13 +20,43 @@ import { Transport } from "./transport/ws.js";
  * automatically, so a release that forgets to bump it fails `pnpm test`
  * instead of silently shipping a stale version string).
  */
-export const SDK_VERSION = "0.1.1";
+export const SDK_VERSION = "0.1.2";
 
 export interface AutoAttachOptions {
   /** Defaults to the same dev-environment detection as `InitOptions.diagnostics`. */
   console?: boolean;
   network?: boolean;
   performance?: boolean;
+  /**
+   * Unlike navigation/state adapters, these two storage engines have
+   * exactly one real instance per app (the AsyncStorage module itself is a
+   * singleton; `window.localStorage`/`sessionStorage` are globals) — there's
+   * no app-specific reference to hand over, so `init()` can find and attach
+   * them itself. MMKV/SQLite/Realm/WatermelonDB are deliberately absent
+   * here: each has app-specific construction (encryption key, db path,
+   * possibly multiple instances) that `init()` can't safely guess — see
+   * the SDK README's "Why not every adapter?" section.
+   */
+  storage?: {
+    /** Dynamically imports `@react-native-async-storage/async-storage`; silently skipped if it's not installed. */
+    asyncStorage?: boolean;
+    /** Attaches both `window.localStorage` and `window.sessionStorage` when present. */
+    webStorage?: boolean;
+  };
+  /**
+   * `zustand` is the only state manager listed here — it's the only one
+   * with a single factory (`create()`) every store passes through, which is
+   * what makes auto-attaching it even possible. Best-effort: patching that
+   * factory only works under some bundlers' CJS interop (Metro, this SDK's
+   * primary target, is one) — under strict ESM it silently doesn't attach
+   * rather than throwing. See `state/autoAttachZustand.ts` and the SDK
+   * README's "Why not every adapter?" for the full story, including
+   * Redux/Jotai/Recoil/MobX's lack of an equivalent single interception
+   * point.
+   */
+  state?: {
+    zustand?: boolean;
+  };
 }
 
 export interface InitOptions {
@@ -67,18 +101,38 @@ export interface InitOptions {
    */
   diagnostics?: boolean;
   /**
-   * Auto-attaches `attachConsole()`/`attachNetwork()`/`attachPerformance()`
-   * — no adapter call needed. These three (unlike navigation, state and
-   * storage adapters) don't need any app-specific reference, so there's
-   * nothing for you to hand over; this defaults to on in dev-style
-   * environments and off in production, same detection as `diagnostics`.
-   * Pass `false` to disable entirely, `true` to force all three on even in
-   * production, or an object to override per capability (e.g.
-   * `{ network: false }` keeps console+performance on but skips network).
-   * Calling the adapter's own `attachX()` yourself afterwards is a safe
-   * no-op if `init()` already attached it — it won't double-report.
+   * Auto-attaches `attachConsole()`/`attachNetwork()`/`attachPerformance()`,
+   * and optionally AsyncStorage/web Storage (see `AutoAttachOptions.storage`)
+   * — no adapter call needed for any of them. Unlike navigation, state
+   * managers, and the storage engines with app-specific construction
+   * (MMKV/SQLite/Realm/WatermelonDB), none of these need anything only your
+   * code could hand over. Defaults to on in dev-style environments and off
+   * in production, same detection as `diagnostics`. Pass `false` to disable
+   * entirely, `true` to force everything on even in production, or an
+   * object to override per capability (e.g. `{ network: false }` keeps
+   * everything else on but skips network; `{ storage: { asyncStorage: true } }`
+   * adds AsyncStorage on top of the usual three). Calling the adapter's own
+   * `attachX()` yourself afterwards is a safe no-op if `init()` already
+   * attached it — it won't double-report.
    */
   autoAttach?: boolean | AutoAttachOptions;
+  /**
+   * Lets the desktop write data back into this app, live: the Storage KV
+   * editor (spec 0007) does an in-place `set`/`remove` through the same
+   * adapter that already observes AsyncStorage/MMKV/localStorage-
+   * sessionStorage, the Stores editor (spec 0007-state) shallow-merges an
+   * edited field back into a Zustand store through its own `set()`, and the
+   * Memory panel's "Clear caches" button (spec 0008) triggers a Hermes GC +
+   * `expo-image` cache clear. Unlike `autoAttach`/`diagnostics`, this is
+   * **not** a dev-default-with-override: it's hard-gated to dev-style
+   * environments and cannot be forced on in production via this option —
+   * there's no authentication on the desktop's WebSocket yet, and letting
+   * the desktop mutate/trigger actions in a production build over an open
+   * LAN socket is a different risk class entirely. Pass `false` to disable
+   * even in dev (e.g. a shared demo device). Defaults to on in dev-style
+   * environments, matching `autoAttach`'s own detection.
+   */
+  allowRemoteWrites?: boolean;
 }
 
 export interface SpyglassHandle {
@@ -149,6 +203,7 @@ export function init(options: InitOptions): SpyglassHandle {
   // from attaching them itself — dev-only by default, matching `diagnostics`.
   const autoAttachDevDefault = isDevEnvironment();
   const detachAutoAttached: Array<() => void> = [];
+  let closed = false;
   if (resolveAutoAttach("console", options.autoAttach, autoAttachDevDefault)) {
     detachAutoAttached.push(attachConsole());
   }
@@ -157,6 +212,71 @@ export function init(options: InitOptions): SpyglassHandle {
   }
   if (resolveAutoAttach("performance", options.autoAttach, autoAttachDevDefault)) {
     detachAutoAttached.push(attachPerformance());
+  }
+
+  // AsyncStorage and web Storage are the only two storage engines with
+  // exactly one real instance per app (see AutoAttachOptions.storage) —
+  // everything else (MMKV, SQLite, Realm, WatermelonDB) still needs a
+  // manual attachX(instance) call, since `init()` has no safe way to guess
+  // which instance/config an app actually uses.
+  if (resolveStorageAutoAttach("asyncStorage", options.autoAttach, autoAttachDevDefault)) {
+    void (async () => {
+      try {
+        const mod = (await import("@react-native-async-storage/async-storage")) as { default?: unknown };
+        if (closed || !mod.default) return;
+        // biome-ignore lint: structurally checked inside attachAsyncStorage itself; the dynamic import can't carry real types without the optional peer dep installed
+        detachAutoAttached.push(attachAsyncStorage(mod.default as any));
+      } catch {
+        // @react-native-async-storage/async-storage isn't installed — silent skip, same spirit as detectFramework()'s expo-constants probe.
+      }
+    })();
+  }
+  if (resolveStorageAutoAttach("webStorage", options.autoAttach, autoAttachDevDefault) && typeof window !== "undefined") {
+    try {
+      if (window.localStorage) detachAutoAttached.push(attachWebStorage(window.localStorage));
+    } catch {
+      // Some browser privacy modes throw on localStorage access instead of leaving it undefined.
+    }
+    try {
+      if (window.sessionStorage) detachAutoAttached.push(attachWebStorage(window.sessionStorage));
+    } catch {
+      // Same as above.
+    }
+  }
+
+  // Best-effort — see AutoAttachOptions.state and state/autoAttachZustand.ts
+  // for why this is the one state manager even attemptable this way, and
+  // why it can silently no-op under some bundlers.
+  if (resolveStateAutoAttach("zustand", options.autoAttach, autoAttachDevDefault)) {
+    void (async () => {
+      const detach = await tryAutoAttachZustand();
+      if (!detach) return;
+      if (closed) {
+        detach(); // restore before this handle is ever used again
+        return;
+      }
+      detachAutoAttached.push(detach);
+    })();
+  }
+
+  // Dev-only, and NOT forcible into production via `allowRemoteWrites: true`
+  // (unlike autoAttach/diagnostics) — see InitOptions.allowRemoteWrites for
+  // why. When off, `transport.onMessage` is never called: no handler is
+  // registered at all, not just hidden behind a UI flag on the desktop side.
+  let disableInboundCommands: (() => void) | undefined;
+  if (resolveRemoteWrites(options.allowRemoteWrites, autoAttachDevDefault)) {
+    capabilities.add("storage:write");
+    // Advertised unconditionally alongside storage:write, independent of
+    // whether any store has actually registered a handler yet (the zustand
+    // auto-attach above is async) — an unregistered storeId simply gets
+    // `errorCode: "no-store"` back, same as storage:write against an engine
+    // with no attached adapter.
+    capabilities.add("state:write");
+    // Same "advertised unconditionally" reasoning as state:write above —
+    // there's no "target" to be missing for memory/clear-cache (spec 0008),
+    // so this is really just announcing that the inbound channel is on.
+    capabilities.add("memory:clear-cache");
+    disableInboundCommands = enableInboundCommands(getCore());
   }
 
   transport.onOpen(() => {
@@ -188,8 +308,10 @@ export function init(options: InitOptions): SpyglassHandle {
   return {
     appId,
     close() {
+      closed = true; // guards the still-pending AsyncStorage dynamic import above from attaching after close()
       clearInterval(heartbeat);
       for (const detach of detachAutoAttached) detach();
+      disableInboundCommands?.();
       transport.close();
       setCore(null);
     },
@@ -202,13 +324,49 @@ export function init(options: InitOptions): SpyglassHandle {
  * dev-environment default for any key it doesn't mention.
  */
 function resolveAutoAttach(
-  key: keyof AutoAttachOptions,
+  key: "console" | "network" | "performance",
   option: boolean | AutoAttachOptions | undefined,
   devDefault: boolean,
 ): boolean {
   if (typeof option === "boolean") return option;
   const perCapability = option?.[key];
   return perCapability ?? devDefault;
+}
+
+/**
+ * Same resolution rules as `resolveAutoAttach`, one level deeper — a
+ * blanket `true`/`false` for `autoAttach` still applies to the storage
+ * sub-keys, an object form reads `option.storage?.[key]`.
+ */
+function resolveStorageAutoAttach(
+  key: "asyncStorage" | "webStorage",
+  option: boolean | AutoAttachOptions | undefined,
+  devDefault: boolean,
+): boolean {
+  if (typeof option === "boolean") return option;
+  const perEngine = option?.storage?.[key];
+  return perEngine ?? devDefault;
+}
+
+/** Same resolution rules as `resolveStorageAutoAttach`, for `AutoAttachOptions.state`. */
+function resolveStateAutoAttach(
+  key: "zustand",
+  option: boolean | AutoAttachOptions | undefined,
+  devDefault: boolean,
+): boolean {
+  if (typeof option === "boolean") return option;
+  const perManager = option?.state?.[key];
+  return perManager ?? devDefault;
+}
+
+/**
+ * Deliberately NOT the same shape as `resolveAutoAttach`: `true` does not
+ * force this on outside of `devDefault` — see `InitOptions.allowRemoteWrites`.
+ * Only `false` has any effect beyond the dev-environment default.
+ */
+function resolveRemoteWrites(option: boolean | undefined, devDefault: boolean): boolean {
+  if (option === false) return false;
+  return devDefault;
 }
 
 function generateAppId(): string {

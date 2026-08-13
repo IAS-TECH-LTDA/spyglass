@@ -1,5 +1,6 @@
 import { createEnvelope, diffValues, hashValue, safeSerialize } from "spyglass-protocol";
 import type { StateActionPayload, StateInitPayload } from "spyglass-protocol";
+import { registerStateWriteHandler } from "../commands.js";
 import { getCore } from "../core.js";
 
 /**
@@ -68,6 +69,17 @@ export function withSpyglass<T extends object>(
       };
       core.transport.send(createEnvelope("state/action", core.appId, payload));
     }) as SetState<T>;
+
+    // Routes a desktop-initiated edit (spec 0007-state) through the exact
+    // same funnel as an organic `set()` call, so it emits the same
+    // `state/action` diff the desktop already knows how to apply — no
+    // separate "remote write" rendering path on the desktop side. Always a
+    // shallow merge (the `replace` param is omitted, i.e. falsy): the
+    // desktop only ever holds the serialized state, never this store's
+    // action functions, so a full replace here would wipe them out.
+    registerStateWriteHandler(storeId, (nextState) => {
+      wrappedSet(nextState as Partial<T>);
+    });
 
     const initialState = config(wrappedSet, get, api);
     prevState = safeSerialize(initialState);

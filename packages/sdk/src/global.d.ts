@@ -24,3 +24,4 @@ declare module "@react-native-async-storage/async-storage";
 declare module "react-native-mmkv";
 declare module "realm";
 declare module "react-router-dom";
+declare module "expo-image"; // memoryClear.ts's "clear caches" (spec 0008)

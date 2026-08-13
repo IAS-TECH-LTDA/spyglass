@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { applyPatch } from "spyglass-protocol";
+import { applyPatch, createEnvelope, isTruncatedValue, MAX_SERIALIZE_DEPTH, STORAGE_WRITE_TIMEOUT_MS } from "spyglass-protocol";
 import type {
   AnyEnvelope,
   SpyglassNavState,
@@ -10,9 +10,11 @@ import type {
   StateActionPayload,
   StorageEngine,
   StorageSnapshotPayload,
+  StorageWriteOp,
   StoreType,
 } from "spyglass-protocol";
 import type { AppInfo } from "../ipc";
+import { sendToApp } from "../ipc";
 
 export type Tab = "graph" | "stores" | "storage" | "queries" | "logs" | "network" | "performance";
 
@@ -145,6 +147,77 @@ export interface AlertCounts {
   network: number;
 }
 
+/**
+ * One in-flight (or just-resolved) `storage/write` sent from the desktop's
+ * `JsonGraph` editor to the connected app (spec 0007), keyed by `requestId`
+ * in `AppData.pendingWrites`. There's no delivery guarantee on that
+ * direction, so every write goes through this instead of being applied
+ * optimistically:
+ *  - "pending" — sent, waiting on either a `storage/write-result` ack or the
+ *    app's own `storage/change` reporting the same value.
+ *  - "applied" — confirmed (ack `ok:true`, or a matching `storage/change`).
+ *    Cleared automatically ~1.2s later (see `scheduleClearApplied`), a
+ *    short visual confirmation window, not a stored state.
+ *  - "failed" — ack `ok:false`, `sendToApp` rejected (no live connection),
+ *    or the 3s timeout with no response at all.
+ *  - "superseded" — a `storage/change` for the same key arrived with a
+ *    different value before this write resolved — something else (the app
+ *    itself, or a race with another edit) changed it first.
+ */
+export interface PendingWrite {
+  requestId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  key: string;
+  op: StorageWriteOp;
+  /** Present for `op: "set"`. */
+  value?: unknown;
+  sentAt: number;
+  status: "pending" | "applied" | "failed" | "superseded";
+  error?: string;
+}
+
+/**
+ * One in-flight (or just-resolved) `state/write` sent from the desktop's
+ * `JsonGraph` editor to a connected app's Zustand store (spec 0007-state),
+ * keyed by `requestId` in `AppData.pendingStateWrites`. Same shape/lifecycle
+ * as `PendingWrite`, with one deliberate difference: no `"superseded"`
+ * status. Storage can reconcile a pending write against the app's own
+ * `storage/change` (which always names the key that changed); `state/action`
+ * carries no `requestId` and only a diff, not a full before/after value, so
+ * there's nothing to correlate against — a state write only ever resolves
+ * via its own `state/write-result` ack, the shared timeout, or disconnect.
+ */
+export interface PendingStateWrite {
+  requestId: string;
+  storeId: string;
+  state: unknown;
+  sentAt: number;
+  status: "pending" | "applied" | "failed";
+  error?: string;
+}
+
+/**
+ * One in-flight (or just-resolved) `memory/clear-cache` sent from the
+ * Memory panel's "Clear caches" button (spec 0008), keyed by `requestId` in
+ * `AppData.pendingCacheClears`. No `"superseded"` status here either (same
+ * reasoning as `PendingStateWrite`) — there's no organic event to
+ * reconcile against, this only ever resolves via its own
+ * `memory/clear-cache-result` ack, the shared timeout, or disconnect.
+ */
+export interface PendingCacheClear {
+  requestId: string;
+  sentAt: number;
+  status: "pending" | "applied" | "failed";
+  error?: string;
+}
+
+/** Structural base shared by `PendingWrite`/`PendingStateWrite`/`PendingCacheClear` — enough for the generic helpers below (`failAllPending`, the applied-clear sweep) to operate on any of the three maps without knowing their full shape. */
+interface PendingBase {
+  status: string;
+  error?: string;
+}
+
 export interface AppData {
   nav?: { state: SpyglassNavState; activeRouteKey: string };
   lastTransitionAt?: number;
@@ -164,6 +237,12 @@ export interface AppData {
   /** Most recent first, capped. */
   perfStalls: PerfStall[];
   alerts: AlertCounts;
+  /** In-flight/just-resolved `storage/write`s, keyed by `requestId` — see `PendingWrite`. */
+  pendingWrites: Record<string, PendingWrite>;
+  /** In-flight/just-resolved `state/write`s, keyed by `requestId` — see `PendingStateWrite`. */
+  pendingStateWrites: Record<string, PendingStateWrite>;
+  /** In-flight/just-resolved `memory/clear-cache`s, keyed by `requestId` — see `PendingCacheClear`. */
+  pendingCacheClears: Record<string, PendingCacheClear>;
 }
 
 interface ConnectionState {
@@ -199,6 +278,39 @@ interface ConnectionState {
   clearNetwork(appId: string): void;
   clearNavGraph(appId: string): void;
   clearPerf(appId: string): void;
+  /**
+   * Sends a Storage KV write down to `appId`'s connected app (spec 0007) and
+   * tracks it in `AppData.pendingWrites` through to resolution — never
+   * applies the value locally/optimistically, see `PendingWrite`'s doc
+   * comment. Safe to call repeatedly for the same key; each call gets its
+   * own `requestId` and resolves independently.
+   */
+  sendStorageWrite(
+    appId: string,
+    engine: StorageEngine,
+    dbName: string | undefined,
+    key: string,
+    op: StorageWriteOp,
+    value?: unknown,
+  ): void;
+  /**
+   * Sends a whole-state write down to `appId`'s connected app for one
+   * Zustand store (spec 0007-state) and tracks it in
+   * `AppData.pendingStateWrites` through to resolution — same
+   * never-optimistic contract as `sendStorageWrite`. `state` should already
+   * be the fully reconstructed store state (i.e. the caller has run
+   * `applyPatch` for the edited leaf) — this only sends it, it doesn't
+   * merge anything itself.
+   */
+  sendStateWrite(appId: string, storeId: string, state: unknown): void;
+  /**
+   * Sends a "clear this app's own caches" command down to `appId`'s
+   * connected app (spec 0008) and tracks it in `AppData.pendingCacheClears`
+   * through to resolution — same never-optimistic contract as
+   * `sendStorageWrite`/`sendStateWrite`. No target/value: see
+   * `MemoryClearCachePayload`'s doc comment in `spyglass-protocol`.
+   */
+  sendClearCache(appId: string): void;
 }
 
 const MAX_ACTION_LOG = 200;
@@ -219,7 +331,61 @@ function emptyAppData(): AppData {
     perfSamples: [],
     perfStalls: [],
     alerts: { log: 0, network: 0 },
+    pendingWrites: {},
+    pendingStateWrites: {},
+    pendingCacheClears: {},
   };
+}
+
+/** Marks every still-"pending" entry "failed" with `error` — used when an app disconnects out from under any writes in flight. Returns the same reference if there's nothing to change. Generic over `PendingBase` so it serves both `pendingWrites` and `pendingStateWrites` without duplicating this logic per map. */
+function failAllPending<T extends PendingBase>(pending: Record<string, T>, error: string): Record<string, T> {
+  const pendingIds = Object.keys(pending).filter((id) => pending[id].status === "pending");
+  if (pendingIds.length === 0) return pending;
+  const next = { ...pending };
+  for (const id of pendingIds) next[id] = { ...next[id], status: "failed", error };
+  return next;
+}
+
+/**
+ * True if `value` contains a `TruncatedValue` marker anywhere inside it
+ * (top-level or nested) — the desktop's own copy of storage/state values
+ * already passed through the SDK's `safeSerialize`, which substitutes one of
+ * these for anything too large/deep/circular to serialize faithfully.
+ * Writing a value containing one back to the app would silently corrupt real
+ * app data with a `"[Truncated]"`-style placeholder, so every write must be
+ * checked before it's ever sent. Depth-capped at `MAX_SERIALIZE_DEPTH`: a
+ * value reconstructed by `applyPatch` on top of already-serialized data can
+ * never be deeper than what `safeSerialize` itself allowed through.
+ */
+function containsTruncatedValue(value: unknown, depth = 0): boolean {
+  if (depth > MAX_SERIALIZE_DEPTH) return false;
+  if (isTruncatedValue(value)) return true;
+  if (Array.isArray(value)) return value.some((v) => containsTruncatedValue(v, depth + 1));
+  if (value !== null && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((v) => containsTruncatedValue(v, depth + 1));
+  }
+  return false;
+}
+
+/** Structural equality for reconciling a pending write's sent value against what the app reports back — good enough for JSON-safe values, no need for anything fancier here. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  }
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  return (
+    aKeys.length === bKeys.length &&
+    aKeys.every((k) => deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+  );
+}
+
+/** IDs whose pending entry just transitioned into "applied" between `prev` and `next` — drives the ~1.2s auto-clear sweep in `handleEnvelope`, shared between `pendingWrites` and `pendingStateWrites` instead of duplicating the diff per map. */
+function newlyApplied<T extends PendingBase>(prev: Record<string, T>, next: Record<string, T>): string[] {
+  return Object.keys(next).filter((id) => next[id].status === "applied" && prev[id]?.status !== "applied");
 }
 
 /** Returns `data` unchanged (same reference) if there's nothing to clear, so callers can skip a re-render. */
@@ -275,7 +441,22 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     set((s) => {
       const existing = s.apps[appId];
       if (!existing) return s;
-      return { apps: { ...s.apps, [appId]: { ...existing, connected: false } } };
+      // Fail any writes still waiting on a response immediately, rather than
+      // making the UI sit on "pending" until the 3s timeout catches up —
+      // the disconnect event is a more precise, more immediate signal.
+      const appData = s.data[appId];
+      const data = appData
+        ? {
+            ...s.data,
+            [appId]: {
+              ...appData,
+              pendingWrites: failAllPending(appData.pendingWrites, "App disconnected"),
+              pendingStateWrites: failAllPending(appData.pendingStateWrites, "App disconnected"),
+              pendingCacheClears: failAllPending(appData.pendingCacheClears, "App disconnected"),
+            },
+          }
+        : s.data;
+      return { apps: { ...s.apps, [appId]: { ...existing, connected: false } }, data };
     });
   },
 
@@ -327,12 +508,200 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 
   handleEnvelope(envelope) {
+    const appId = envelope.appId;
+    const prevData = get().data[appId];
+    const prevPendingWrites = prevData?.pendingWrites ?? {};
+    const prevPendingStateWrites = prevData?.pendingStateWrites ?? {};
+    const prevPendingCacheClears = prevData?.pendingCacheClears ?? {};
+
     set((s) => {
-      const appData = s.data[envelope.appId] ?? emptyAppData();
+      const appData = s.data[appId] ?? emptyAppData();
       const next = applyEnvelopeToAppData(appData, envelope);
       if (next === appData) return s;
-      return { data: { ...s.data, [envelope.appId]: next } };
+      return { data: { ...s.data, [appId]: next } };
     });
+
+    // A write just resolved to "applied" (via `storage/write-result`,
+    // `state/write-result`, or a matching `storage/change`, all handled
+    // inside applyEnvelopeToAppData) — schedule its brief on-screen
+    // confirmation to clear. Diffing against the pre-update snapshot means
+    // this only fires once, right when the transition actually happens, not
+    // on every unrelated envelope.
+    const nextData = get().data[appId];
+    if (!nextData) return;
+
+    for (const requestId of newlyApplied(prevPendingWrites, nextData.pendingWrites)) {
+      const timer = setTimeout(() => {
+        set((s) => {
+          const appData = s.data[appId];
+          const current = appData?.pendingWrites[requestId];
+          if (!appData || !current || current.status !== "applied") return s;
+          const { [requestId]: _cleared, ...rest } = appData.pendingWrites;
+          return { data: { ...s.data, [appId]: { ...appData, pendingWrites: rest } } };
+        });
+      }, 1200);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
+
+    for (const requestId of newlyApplied(prevPendingStateWrites, nextData.pendingStateWrites)) {
+      const timer = setTimeout(() => {
+        set((s) => {
+          const appData = s.data[appId];
+          const current = appData?.pendingStateWrites[requestId];
+          if (!appData || !current || current.status !== "applied") return s;
+          const { [requestId]: _cleared, ...rest } = appData.pendingStateWrites;
+          return { data: { ...s.data, [appId]: { ...appData, pendingStateWrites: rest } } };
+        });
+      }, 1200);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
+
+    for (const requestId of newlyApplied(prevPendingCacheClears, nextData.pendingCacheClears)) {
+      const timer = setTimeout(() => {
+        set((s) => {
+          const appData = s.data[appId];
+          const current = appData?.pendingCacheClears[requestId];
+          if (!appData || !current || current.status !== "applied") return s;
+          const { [requestId]: _cleared, ...rest } = appData.pendingCacheClears;
+          return { data: { ...s.data, [appId]: { ...appData, pendingCacheClears: rest } } };
+        });
+      }, 1200);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
+  },
+
+  sendStorageWrite(appId, engine, dbName, key, op, value) {
+    const requestId = `w_${Math.random().toString(36).slice(2, 10)}`;
+    const pending: PendingWrite = { requestId, engine, dbName, key, op, value, sentAt: Date.now(), status: "pending" };
+
+    set((s) => {
+      const appData = s.data[appId] ?? emptyAppData();
+      return { data: { ...s.data, [appId]: { ...appData, pendingWrites: { ...appData.pendingWrites, [requestId]: pending } } } };
+    });
+
+    const fail = (error: string) => {
+      set((s) => {
+        const appData = s.data[appId];
+        const current = appData?.pendingWrites[requestId];
+        // Already resolved by an ack or a matching storage/change — the 3s
+        // timeout firing after that must not clobber a real result.
+        if (!appData || !current || current.status !== "pending") return s;
+        return {
+          data: {
+            ...s.data,
+            [appId]: { ...appData, pendingWrites: { ...appData.pendingWrites, [requestId]: { ...current, status: "failed", error } } },
+          },
+        };
+      });
+    };
+
+    // The value the desktop holds already went through the SDK's
+    // safeSerialize — writing a truncated marker back would corrupt real
+    // app data. Caught here (post-optimistic-pending-entry, pre-send) so the
+    // UI still shows a "failed" row instead of silently doing nothing.
+    if (op === "set" && containsTruncatedValue(value)) {
+      fail("This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.");
+      return;
+    }
+
+    const envelope = createEnvelope("storage/write", appId, { requestId, engine, dbName, key, op, value });
+    sendToApp(envelope)
+      .then(() => {
+        const timer = setTimeout(
+          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          STORAGE_WRITE_TIMEOUT_MS,
+        );
+        (timer as unknown as { unref?: () => void }).unref?.();
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
+  },
+
+  sendStateWrite(appId, storeId, state) {
+    const requestId = `sw_${Math.random().toString(36).slice(2, 10)}`;
+    const pending: PendingStateWrite = { requestId, storeId, state, sentAt: Date.now(), status: "pending" };
+
+    set((s) => {
+      const appData = s.data[appId] ?? emptyAppData();
+      return {
+        data: { ...s.data, [appId]: { ...appData, pendingStateWrites: { ...appData.pendingStateWrites, [requestId]: pending } } },
+      };
+    });
+
+    const fail = (error: string) => {
+      set((s) => {
+        const appData = s.data[appId];
+        const current = appData?.pendingStateWrites[requestId];
+        if (!appData || !current || current.status !== "pending") return s;
+        return {
+          data: {
+            ...s.data,
+            [appId]: {
+              ...appData,
+              pendingStateWrites: { ...appData.pendingStateWrites, [requestId]: { ...current, status: "failed", error } },
+            },
+          },
+        };
+      });
+    };
+
+    // See the matching guard in sendStorageWrite above — same reasoning.
+    if (containsTruncatedValue(state)) {
+      fail("This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.");
+      return;
+    }
+
+    const envelope = createEnvelope("state/write", appId, { requestId, storeId, state });
+    sendToApp(envelope)
+      .then(() => {
+        const timer = setTimeout(
+          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          STORAGE_WRITE_TIMEOUT_MS,
+        );
+        (timer as unknown as { unref?: () => void }).unref?.();
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
+  },
+
+  sendClearCache(appId) {
+    const requestId = `cc_${Math.random().toString(36).slice(2, 10)}`;
+    const pending: PendingCacheClear = { requestId, sentAt: Date.now(), status: "pending" };
+
+    set((s) => {
+      const appData = s.data[appId] ?? emptyAppData();
+      return {
+        data: { ...s.data, [appId]: { ...appData, pendingCacheClears: { ...appData.pendingCacheClears, [requestId]: pending } } },
+      };
+    });
+
+    const fail = (error: string) => {
+      set((s) => {
+        const appData = s.data[appId];
+        const current = appData?.pendingCacheClears[requestId];
+        if (!appData || !current || current.status !== "pending") return s;
+        return {
+          data: {
+            ...s.data,
+            [appId]: {
+              ...appData,
+              pendingCacheClears: { ...appData.pendingCacheClears, [requestId]: { ...current, status: "failed", error } },
+            },
+          },
+        };
+      });
+    };
+
+    // No value to reconstruct/guard here (unlike sendStorageWrite/
+    // sendStateWrite) — memory/clear-cache carries only a requestId.
+    const envelope = createEnvelope("memory/clear-cache", appId, { requestId });
+    sendToApp(envelope)
+      .then(() => {
+        const timer = setTimeout(
+          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          STORAGE_WRITE_TIMEOUT_MS,
+        );
+        (timer as unknown as { unref?: () => void }).unref?.();
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   },
 
   hydrateFromCache(_appId, envelopes) {
@@ -405,7 +774,16 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
       const p = envelope.payload;
       const existing = appData.stores[p.storeId];
       if (!existing) return appData; // action for a store we haven't seen `state/init` for yet
-      const nextState = applyPatch(existing.state, p.diff);
+      // Defense in depth: `p.diff` comes straight off an unauthenticated LAN
+      // WebSocket. `applyPatch` itself fails safe on malformed input, but a
+      // single unexpected exception here must not take down the whole
+      // reducer (and with it every other app's data) alongside it.
+      let nextState = existing.state;
+      try {
+        nextState = applyPatch(existing.state, p.diff);
+      } catch (err) {
+        console.warn(`[Spyglass] failed to apply state/action diff for store "${p.storeId}":`, err);
+      }
       const log = [p, ...existing.log].slice(0, MAX_ACTION_LOG);
       return { ...appData, stores: { ...appData.stores, [p.storeId]: { ...existing, state: nextState, log } } };
     }
@@ -422,16 +800,76 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
       // `storage/snapshot`, so there's nothing to patch here.
       const p = envelope.payload;
       const existing = appData.storage[p.engine];
-      if (!existing?.entries || p.key === undefined) return appData;
+
+      // Reconcile any pending desktop-initiated write to this exact key
+      // (spec 0007) — the app's own report of its storage is authoritative:
+      // if it matches what was sent, the write applied; if it doesn't,
+      // something else (the app itself, or a race with another edit)
+      // changed the key first. This runs whether or not a
+      // `storage/write-result` ack has arrived yet — either can resolve it.
+      let pendingWrites = appData.pendingWrites;
+      if (p.key !== undefined) {
+        const incomingValue = p.changeType === "remove" ? undefined : p.value;
+        for (const [requestId, write] of Object.entries(pendingWrites)) {
+          if (write.status !== "pending" || write.engine !== p.engine || write.dbName !== p.dbName || write.key !== p.key) continue;
+          const matches = write.op === "remove" ? p.changeType === "remove" : deepEqual(write.value, incomingValue);
+          if (pendingWrites === appData.pendingWrites) pendingWrites = { ...appData.pendingWrites };
+          pendingWrites[requestId] = { ...write, status: matches ? "applied" : "superseded" };
+        }
+      }
+
+      if (!existing?.entries || p.key === undefined) {
+        return pendingWrites === appData.pendingWrites ? appData : { ...appData, pendingWrites };
+      }
 
       const entries = existing.entries.filter((e) => e.key !== p.key);
       if (p.changeType !== "remove") entries.push({ key: p.key, value: p.value });
 
-      return { ...appData, storage: { ...appData.storage, [p.engine]: { ...existing, entries } } };
+      return { ...appData, storage: { ...appData.storage, [p.engine]: { ...existing, entries } }, pendingWrites };
+    }
+
+    case "storage/write-result": {
+      const p = envelope.payload;
+      const current = appData.pendingWrites[p.requestId];
+      if (!current) return appData; // unknown/stale requestId (e.g. a reload after the request already resolved) — ignore, not an error
+      return {
+        ...appData,
+        pendingWrites: {
+          ...appData.pendingWrites,
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+        },
+      };
+    }
+
+    case "state/write-result": {
+      const p = envelope.payload;
+      const current = appData.pendingStateWrites[p.requestId];
+      if (!current) return appData; // unknown/stale requestId — ignore, not an error
+      return {
+        ...appData,
+        pendingStateWrites: {
+          ...appData.pendingStateWrites,
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+        },
+      };
+    }
+
+    case "memory/clear-cache-result": {
+      const p = envelope.payload;
+      const current = appData.pendingCacheClears[p.requestId];
+      if (!current) return appData; // unknown/stale requestId — ignore, not an error
+      return {
+        ...appData,
+        pendingCacheClears: {
+          ...appData.pendingCacheClears,
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+        },
+      };
     }
 
     case "query/snapshot": {
       const p = envelope.payload;
+      if (!Array.isArray(p.queries)) return appData; // malformed payload — keep whatever queries we already have
       const queries: Record<string, QueryInfo> = {};
       for (const q of p.queries) queries[q.queryHash] = q;
       return { ...appData, queries };
@@ -449,7 +887,16 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
 
     case "log/entry": {
       const p = envelope.payload;
-      const entry: LogEntry = { level: p.level, message: p.message, args: p.args, ts: envelope.ts };
+      // `p.args`/`p.message` are typed as `unknown[]`/`string` by the
+      // protocol, but that's compile-time only — the frame itself comes off
+      // an unauthenticated LAN WebSocket. Coerce here, once, instead of every
+      // consumer (LogsView's filter/render/copy) having to re-guard.
+      const entry: LogEntry = {
+        level: p.level,
+        message: typeof p.message === "string" ? p.message : String(p.message),
+        args: Array.isArray(p.args) ? p.args : [],
+        ts: envelope.ts,
+      };
       return { ...appData, logs: [entry, ...appData.logs].slice(0, MAX_LOG_ENTRIES) };
     }
 
@@ -569,6 +1016,10 @@ function applyNavStateToGraph(graph: NavGraph, payload: NavStatePayload, now: nu
   let activeName: string | undefined;
 
   function visit(state: SpyglassNavState) {
+    // `state` traces back to an unauthenticated LAN WebSocket frame — guard
+    // against a malformed/malicious `nav/state` (e.g. `routes` missing or
+    // not an array) instead of throwing mid-render.
+    if (!state || !Array.isArray(state.routes)) return;
     for (let i = 0; i < state.routes.length; i++) {
       const route = state.routes[i];
       nodes = upsertNode(nodes, route.name, route.params, now);

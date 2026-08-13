@@ -1,5 +1,6 @@
 import { createEnvelope } from "spyglass-protocol";
 import type { KVEntry, StorageChangePayload, StorageSnapshotPayload } from "spyglass-protocol";
+import { registerStorageWriteHandler } from "../commands.js";
 import { getCore } from "../core.js";
 import { parseMaybeJson } from "./shared.js";
 
@@ -66,9 +67,25 @@ export function attachMmkv(instance: MMKVLike, options: MmkvAdapterOptions = {})
     core.transport.send(createEnvelope("storage/change", core.appId, payload));
   };
 
+  // Registered before either branch below returns, so both get write
+  // support: in the listener branch, `instance.set`/`.delete` are the
+  // library's real (unpatched) methods, and a write here naturally fires
+  // `addOnValueChangedListener` -> `emitChange` on its own, same as any
+  // app-originated write. In the fallback branch, these read through
+  // whatever `instance.set`/`.delete` currently are — the patched versions
+  // once set up below — so the same is true there too.
+  const unregisterWrite = registerStorageWriteHandler("mmkv", options.dbName, (op, key, value) => {
+    if (op === "remove") instance.delete(key);
+    else if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") instance.set(key, value);
+    else instance.set(key, JSON.stringify(value));
+  });
+
   if (instance.addOnValueChangedListener) {
     const subscription = instance.addOnValueChangedListener(emitChange);
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      unregisterWrite();
+    };
   }
 
   const originalSet = instance.set.bind(instance);
@@ -84,5 +101,6 @@ export function attachMmkv(instance: MMKVLike, options: MmkvAdapterOptions = {})
   return () => {
     instance.set = originalSet;
     instance.delete = originalDelete;
+    unregisterWrite();
   };
 }
