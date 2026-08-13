@@ -2,7 +2,7 @@
 
 Instrumentation SDK for React Native, Expo and web apps. Streams navigation,
 state, storage, console and network events to the
-[Spyglass](https://github.com/italosouza/spyglass) desktop inspector.
+[Spyglass](https://github.com/IAS-TECH-LTDA/spyglass) desktop inspector.
 
 ## Install
 

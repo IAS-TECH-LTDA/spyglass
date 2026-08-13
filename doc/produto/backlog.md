@@ -24,6 +24,7 @@ _(nenhum item pendente)_
 | 0006 | Visualizador de JSON em diagrama de nós | [0006-visualizador-json-diagrama.md](specs/0006-visualizador-json-diagrama.md) | 9 | 2 | 90% | 4 | 4.1 | Validação manual ao vivo nas 8 telas trocadas, incluindo payload grande (fallback) e canvas embutido em painel |
 | 0007 | Escrita ao vivo em Storage KV a partir do desktop | [0007-escrita-storage-desktop.md](specs/0007-escrita-storage-desktop.md) | 5 | 2 | 70% | 5 | 1.4 | Depende da 0006; validação manual ao vivo com AsyncStorage/MMKV/web-storage reais, incluindo desconexão em pleno write |
 | 0008 | Monitoramento de memória/armazenamento/swap do device e do app + limpar caches | [0008-monitoramento-memoria-dispositivo.md](specs/0008-monitoramento-memoria-dispositivo.md) | 5 | 2 | 80% | 6 | 1.3 | Validação manual ao vivo em device Android real + Simulator iOS; sem suporte a device físico iOS (ver Fora de escopo) |
+| 0009 | Auto-update do desktop via GitHub Releases | [0009-auto-update-desktop.md](specs/0009-auto-update-desktop.md) | 8 | 3 | 90% | 5 | 4.3 | Pré-requisitos manuais (criar o repo no GitHub, gerar as chaves minisign, secrets Apple/updater), primeiro release real e teste em máquina limpa (CA6–CA8) |
 
 ## Entregue
 

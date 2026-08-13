@@ -13,12 +13,20 @@ type scale and components this copy should be built with.
 
 ## 0. Global stage note
 
+**Update (2026-08-13):** `spyglass-react`/`spyglass-protocol` are published
+on npm and the desktop app now ships packaged, self-updating builds via
+GitHub Releases (see `doc/produto/specs/0009-auto-update-desktop.md`) — the
+"pre-npm, clone and run only" framing below is stale and this page needs a
+pass before publishing. Original note, kept for context:
+
 **The product is pre-npm, one commit in.** `spyglass-react` and
 `spyglass-protocol` are not published; the desktop app has no packaged
-build (`bundle.active: false` in `tauri.conf.json` — no `.dmg`/`.exe` to
-download). Every CTA on this page reflects that honestly: "clone and run,"
-never "download" or "npm install" as the primary action. Revisit this page
-once `doc/produto/specs/0003-publicacao-npm.md` ships.
+build (~~`bundle.active: false` in `tauri.conf.json`~~ — this was already
+inaccurate when written; the real blocker was simply that no release
+pipeline existed yet — no `.dmg`/`.exe` to download). Every CTA on this page
+reflects that honestly: "clone and run," never "download" or "npm install"
+as the primary action. Revisit this page once
+`doc/produto/specs/0003-publicacao-npm.md` ships.
 
 ---
 
@@ -293,7 +301,7 @@ technical, credibility-building items:
 > Clone the repo, run the desktop app, add one line to your project.
 
 ```bash
-git clone https://github.com/italosouza/spyglass.git
+git clone https://github.com/IAS-TECH-LTDA/spyglass.git
 cd spyglass && pnpm install && pnpm dev:desktop
 ```
 

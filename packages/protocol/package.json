@@ -28,12 +28,12 @@
   "author": "Italo Souza",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/italosouza/spyglass.git",
+    "url": "git+https://github.com/IAS-TECH-LTDA/spyglass.git",
     "directory": "packages/protocol"
   },
-  "homepage": "https://github.com/italosouza/spyglass#readme",
+  "homepage": "https://github.com/IAS-TECH-LTDA/spyglass#readme",
   "bugs": {
-    "url": "https://github.com/italosouza/spyglass/issues"
+    "url": "https://github.com/IAS-TECH-LTDA/spyglass/issues"
   },
   "keywords": ["spyglass", "react-native", "expo", "devtools", "protocol"],
   "publishConfig": {

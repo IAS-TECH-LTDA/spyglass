@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Spyglass binds a WebSocket server on 0.0.0.0:8098 (see
+    src-tauri/src/ws_server.rs) so React Native apps on a device or
+    simulator can connect to the inspector. macOS 15+ shows a local-network
+    permission prompt the first time an app does this; without this key the
+    prompt carries generic system copy that gives the user no reason to
+    allow it. Tauri v2 merges this file into the generated macOS bundle's
+    own Info.plist at build time.
+  -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Spyglass listens on your local network so React Native apps running on a device or simulator can connect to the inspector.</string>
+</dict>
+</plist>

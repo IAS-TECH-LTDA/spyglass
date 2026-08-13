@@ -33,12 +33,12 @@ monorepo of three pieces that talk over one wire protocol.
 |---|---|
 | [`spyglass-protocol`](./packages/protocol) | Dependency-free shared types/helpers for the SDK↔Desktop WebSocket protocol. Source of truth — the Rust side of the desktop app is hand-mirrored from it. |
 | [`spyglass-react`](./packages/sdk) | Instrumentation SDK embedded in your React Native/Expo/web app. Opens a WebSocket to the desktop app and streams events. |
-| `apps/desktop` | Tauri app (React/Vite frontend + Rust backend) — the desktop inspector itself. Not published; download/build it to run locally. |
+| `apps/desktop` | Tauri app (React/Vite frontend + Rust backend) — the desktop inspector itself. Distributed via [GitHub Releases](https://github.com/IAS-TECH-LTDA/spyglass/releases) and self-updating; see "Installing the desktop app" below. |
 
 ## Quick start
 
-1. Run the desktop app (`pnpm dev:desktop` from a clone of this repo, or a
-   built release once one exists).
+1. Install the desktop app — see "Installing the desktop app" below, or run
+   it from a clone of this repo with `pnpm dev:desktop`.
 2. In your app:
    ```bash
    # whichever your app already uses
@@ -59,6 +59,29 @@ Simulator, Android Emulator, a physical device on the same Wi-Fi) — no
 `host` option needed for most setups. If nothing connects, open the desktop
 app: its empty screen lists this machine's reachable addresses and the exact
 snippet to use for your scenario.
+
+## Installing the desktop app
+
+Download the build for your platform from the
+[latest release](https://github.com/IAS-TECH-LTDA/spyglass/releases/latest).
+Once installed, Spyglass checks for updates on its own and offers to
+install them in-app — you only go through this download once.
+
+- **macOS** — open the `.dmg` and **drag Spyglass into `/Applications`
+  before opening it**. Opening it straight from the mounted `.dmg` (or from
+  `~/Downloads`) runs it from a read-only, translocated location that later
+  breaks the in-app updater. The first launch also prompts for local-network
+  access (Spyglass listens on your LAN so a device or simulator can connect)
+  and, if your firewall is on, for permission to accept incoming
+  connections — both are one-time.
+- **Windows** — the installer isn't code-signed yet, so the first run may
+  show a Windows SmartScreen warning. Click **More info → Run anyway**.
+  This only affects the initial install; in-app updates aren't downloaded
+  through the browser and don't trigger SmartScreen.
+- **Linux** — download the `.AppImage` if you want in-app auto-updates (the
+  `.deb` is a convenience install that does not self-update). AppImages need
+  `libfuse2` to run: `sudo apt install libfuse2` on Debian/Ubuntu if
+  launching it does nothing.
 
 ## Development
 

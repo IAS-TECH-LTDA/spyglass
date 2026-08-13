@@ -1,0 +1,158 @@
+name: Release Desktop
+
+# Builds and publishes the Spyglass desktop app for the auto-updater
+# (packages/protocol and packages/sdk keep their own manual `pnpm release`
+# flow — see CLAUDE.md's "Publishing" section for why the desktop is
+# deliberately NOT on that lockstep). Triggered by a `desktop-v*` tag so it
+# never fires on an npm-package release tag.
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Cheap guard against the most common mistake in this flow: tagging
+  # desktop-vX.Y.Z while apps/desktop/package.json still says something
+  # else. Left unchecked, that produces a latest.json announcing a version
+  # that installed apps already have (or don't yet have, silently).
+  check-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches apps/desktop/package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#desktop-v}"
+          PKG=$(node -p "require('./apps/desktop/package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag desktop-v$TAG does not match apps/desktop/package.json version $PKG"
+            exit 1
+          fi
+
+  # Release is created as a draft up front and published only once every
+  # platform leg has succeeded — releases/latest/download/latest.json (the
+  # updater's endpoint) only resolves published, non-prerelease releases,
+  # so a half-built matrix is never visible to any installed app.
+  create-release:
+    needs: check-tag
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: `Spyglass ${context.ref.replace('refs/tags/desktop-v', '')}`,
+              draft: true,
+              prerelease: false,
+            });
+            return data.id;
+
+  # max-parallel: 1 is deliberate, not an oversight. tauri-action builds
+  # latest.json by downloading whatever's already attached to the release,
+  # merging in this leg's platform entry, and re-uploading — with legs
+  # running concurrently that's a read-modify-write race, and the last
+  # writer silently drops the other platforms' entries. Serializing costs
+  # a few extra minutes per release; this repo gets free macOS/Windows/
+  # Linux runners as a public repo, so that cost is free too.
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+          - platform: ubuntu-22.04 # not `-latest`: AppImage links against the
+            args: "" # build host's glibc, and 22.04 keeps that floor low.
+          - platform: windows-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Only meaningful on macOS (the universal build needs both
+          # slices); harmless no-op elsewhere.
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/desktop/src-tauri -> target"
+
+      - name: Install Linux system deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev
+
+      - run: pnpm install --frozen-lockfile
+
+      # Required: tauri.conf.json's beforeBuildCommand is just
+      # `vite build`, which does NOT build packages/protocol. apps/desktop
+      # depends on spyglass-protocol via workspace:*, resolved to its
+      # dist/ output (not source) — on a clean checkout that dist/ doesn't
+      # exist yet, and Vite fails to resolve the import without this step.
+      - run: pnpm build
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: apps/desktop
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  # Flips the draft to published, which is what makes
+  # releases/latest/download/latest.json start resolving to this release.
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false,
+            });

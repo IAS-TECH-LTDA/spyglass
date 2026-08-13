@@ -2467,3 +2467,68 @@ button.jgn-row {
 .btn-accent:hover {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.update-banner-notes {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.update-banner-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.update-banner-btn:hover {
+  border-color: var(--accent);
+}
+
+.update-banner-btn-primary {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.update-banner-btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.update-banner-progress-track {
+  flex: 1;
+  max-width: 240px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.update-banner-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}

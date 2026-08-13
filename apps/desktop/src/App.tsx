@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { AlertSettingsPanel } from "./components/AlertSettingsPanel";
 import { SplashScreen } from "./components/SplashScreen";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { forgetApp, getCachedMessages, listApps, onAppConnected, onAppDisconnected, onMessage } from "./ipc";
 import { handleEnvelopeForAlerts, primeAlerts } from "./lib/alertRunner";
 import { useConnectionStore, type Tab } from "./state/connection";
+import { useUpdaterStore } from "./state/updater";
 import { ConnectView } from "./views/connect/ConnectView";
 import { GraphView } from "./views/graph/GraphView";
 import { StoresView } from "./views/stores/StoresView";
@@ -27,6 +29,12 @@ const TABS: Array<{ id: Tab; label: string }> = [
 function formatBadgeCount(count: number): string {
   return count > 99 ? "99+" : String(count);
 }
+
+// First check waits until well after the splash/hydration settles, so it
+// never competes with cold-start perf; re-checks stay infrequent since the
+// app is typically left open for days.
+const UPDATE_CHECK_DELAY_MS = 10_000;
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export default function App() {
   const apps = useConnectionStore((s) => s.apps);
@@ -78,6 +86,19 @@ export default function App() {
     };
   }, [upsertApp, markDisconnected, handleEnvelope, hydrateFromCache]);
 
+  // Separate from the connection-bootstrap effect above on purpose — that
+  // one is the connection spine (deps track its own IPC callbacks); update
+  // checking is an unrelated concern with its own timers.
+  useEffect(() => {
+    const runCheck = useUpdaterStore.getState().runCheck;
+    const initial = setTimeout(() => void runCheck(), UPDATE_CHECK_DELAY_MS);
+    const interval = setInterval(() => void runCheck(), UPDATE_CHECK_INTERVAL_MS);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
+  }, []);
+
   const appList = Object.values(apps).sort((a, b) => b.connectedAt - a.connectedAt);
 
   const handleForget = (appId: string) => {
@@ -88,6 +109,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <SplashScreen ready={ready} />
+      <UpdateBanner />
       <header className="topbar">
         <div className="brand">Spyglass</div>
         <div className="app-pills">

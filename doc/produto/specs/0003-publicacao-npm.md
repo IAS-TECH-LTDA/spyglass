@@ -100,9 +100,13 @@ próprio IP de rede.
 - Autenticação/token de pareamento no WebSocket — item de segurança
   separado no backlog (bind em `0.0.0.0` sem auth já existe hoje, esta spec
   só torna isso mais visível ao expor os IPs).
-- Empacotamento/distribuição do próprio app desktop (`tauri.conf.json` tem
-  `bundle.active: false`) — fica como pré-requisito documentado para uma
-  spec futura, incluindo entitlements de rede local do macOS.
+- Empacotamento/distribuição do próprio app desktop — ficou como
+  pré-requisito documentado para uma spec futura, incluindo entitlements de
+  rede local do macOS. **Nota (2026-08-13):** a afirmação original aqui, de
+  que `tauri.conf.json` tinha `bundle.active: false`, já estava desatualizada
+  antes mesmo de virar código — o valor sempre foi `true`. O empacotamento e
+  a distribuição em si (auto-update via GitHub Releases) saíram como spec
+  0009-auto-update-desktop.md.
 - Suporte a IPv6 na lista de IPs exibida.
 - Changesets ou outra automação de versionamento — decisão explícita por
   `pnpm publish -r` simples, dado que há um único mantenedor hoje.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Spyglass",
-  "version": "0.1.0",
+  "version": "../package.json",
   "identifier": "dev.spyglass.desktop",
   "build": {
     "beforeDevCommand": "pnpm exec vite",
@@ -25,12 +25,29 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["app", "dmg", "nsis", "appimage", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/IAS-TECH-LTDA/spyglass/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkxQjk5NDk3OTg5QTc1NgpSV1JXcDRsNVNaa2JDVFBBYWE1WjZDM1E0eDN0U1JwczZLV1RpNit5R0dYckV4elQ0Qm5SUHk4Zgo=",
+      "dialog": false,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

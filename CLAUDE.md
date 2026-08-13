@@ -36,19 +36,36 @@ pnpm --filter spyglass-desktop typecheck    # tsc -b (project references)
 
 There is no linter wired up yet (`lint` at the root is a no-op — no package defines a `lint` script).
 
-`apps/desktop` has no unit tests (`test` script is a stub that exits 0); its correctness is exercised via `pnpm dev:desktop` and the Rust side (`cargo check` / `cargo test` from `apps/desktop/src-tauri`).
+`apps/desktop` has unit tests on both sides: `pnpm --filter spyglass-desktop test` (vitest) for the frontend, `cargo test` from `apps/desktop/src-tauri` for the Rust modules that have `#[cfg(test)]` blocks (`registry.rs`, `adb.rs`, `netinfo.rs`, `ios_memory.rs`). Beyond that, correctness is exercised via `pnpm dev:desktop`.
 
 `packages/protocol` and `packages/sdk` each have two tsconfigs: `tsconfig.json` (used by `typecheck`, includes `src/__tests__`) and `tsconfig.build.json` (used by `build`/`dev`, excludes tests) — so published `dist/` never ships compiled test files, without dropping test coverage from `pnpm typecheck`.
 
 ## Publishing
 
-Both `packages/protocol` and `packages/sdk` are public npm packages (`apps/desktop` stays `private`). Release flow is a single manual command, not automated (one maintainer, no CI yet):
+There are two independent release cycles — npm packages and the desktop app — deliberately **not** kept in lockstep with each other. Don't "fix" a version mismatch between `apps/desktop/package.json` and `packages/sdk/package.json`; it's not a bug. See the desktop subsection below for why.
+
+### npm packages (`packages/protocol`, `packages/sdk`)
+
+Both are public npm packages (`apps/desktop` stays `private`, never published to npm). Release flow is a single manual command, not automated (one maintainer, no CI yet):
 
 ```bash
 pnpm release   # typecheck && test && build && publish -r --access public
 ```
 
 Before running it: bump the version in both `package.json`s to the same value (the protocol and SDK are meant to move in lockstep, since the Rust side hand-mirrors `packages/protocol`'s types) and in `SDK_VERSION` in `packages/sdk/src/index.ts` (`__tests__/version.test.ts` fails the build if these drift). `spyglass-react`'s dependency on `spyglass-protocol` is `workspace:^` — pnpm rewrites that to a real semver range (e.g. `^0.1.0`) only during `pnpm publish`/`pnpm pack`, never under plain `npm publish`. Verify a release before trusting it: `pnpm --filter spyglass-react exec pnpm pack` and inspect the resulting tarball — it must contain `dist/` (not `dist/__tests__/`) and the dependency range must not read `workspace:^` verbatim.
+
+### Desktop app (`apps/desktop`)
+
+Distributed as signed, self-updating binaries via GitHub Releases (macOS/Windows/Linux), built by `.github/workflows/release.yml` on push of a `desktop-v*` tag — see `doc/produto/specs/0009-auto-update-desktop.md` for the full design and rationale. `apps/desktop/package.json`'s `version` is the single source of truth; `tauri.conf.json` points at it (`"version": "../package.json"`) rather than duplicating it, and `src-tauri/Cargo.toml`'s `version` is guarded to match by `apps/desktop/src/__tests__/version.test.ts`. Release flow:
+
+```bash
+# bump apps/desktop/package.json + src-tauri/Cargo.toml to the same version, commit, then:
+git tag desktop-v0.1.1 && git push --follow-tags
+```
+
+The workflow's `check-tag` job fails the run if the tag doesn't match `apps/desktop/package.json`'s version — a mismatch would make `latest.json` announce a version that already-updated clients have (or don't have), so it's a hard stop, not a warning.
+
+**Why the desktop app is deliberately not on the protocol/sdk lockstep:** that lockstep exists because `spyglass-react` imports `spyglass-protocol`'s compiled output directly, and `registry.rs` hand-mirrors `packages/protocol/src/types.ts` — it's a source-compatibility constraint expressed as shared version numbers, published by the same command to the same registry. The desktop app shares none of that: different artifact (a signed binary, not an npm tarball), different channel (push via auto-update vs. pull via `npm install`), and a wildly different cost per release (~20 CI-minutes across 3 OSes vs. seconds). Forcing shared version numbers would either force an npm publish for a desktop-only UI tweak, or force a 3-platform desktop release for an SDK-only fix — with zero compatibility benefit, since the actual SDK↔Desktop wire compatibility is already enforced independently by the envelope's `v` field and `PROTOCOL_VERSION` (`packages/protocol/src/constants.ts`), not by version numbers matching. Users will always run mismatched version combinations in practice (the SDK in their app updates on their schedule; the desktop auto-updates on its own) — pretending otherwise via shared numbering would be actively misleading.
 
 ## Architecture
 

@@ -1,6 +1,6 @@
 # spyglass-protocol
 
-Shared message types and helpers for the [Spyglass](https://github.com/italosouza/spyglass)
+Shared message types and helpers for the [Spyglass](https://github.com/IAS-TECH-LTDA/spyglass)
 SDK↔Desktop WebSocket protocol.
 
 You probably don't need this package directly — it's a dependency of
