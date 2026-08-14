@@ -181,6 +181,20 @@ export const pt = {
   "storage.clear.confirmPrompt": "Digite {target} para confirmar.",
   "storage.clear.confirmButton": "Excluir permanentemente",
   "storage.clear.cancelButton": "Cancelar",
+  "storage.dbFile.exportButton": "Exportar .db",
+  "storage.dbFile.importButton": "Importar .db",
+  "storage.dbFile.exporting": "Exportando…",
+  "storage.dbFile.importing": "Importando…",
+  "storage.dbFile.unsupported": "Exportar/Importar indisponível",
+  "storage.dbFile.noPath": "Nenhum caminho de arquivo informado para este engine.",
+  "storage.dbFile.iosPhysicalUnsupported": "Não disponível para um iPhone/iPad físico — o desktop não tem como acessar o armazenamento privado dele.",
+  "storage.dbFile.platformUnsupported": "Não disponível para esta plataforma.",
+  "storage.dbFile.needsDeviceSelection": "Abra a aba Performance uma vez para escolher o dispositivo Android e o pacote deste app, depois volte aqui.",
+  "storage.dbFile.exportSuccess": "{count} arquivo(s) exportado(s) para {dir}.",
+  "storage.dbFile.importSuccess": "Importado — reinicie o app conectado para os novos dados terem efeito.",
+  "storage.dbFile.importConfirmTitle": "Importar em {target}?",
+  "storage.dbFile.importConfirmBody": "Isso sobrescreve {target} no app conectado. Não pode ser desfeito, e o app precisa ser reiniciado para a mudança ter efeito.",
+  "storage.dbFile.importConfirmButton": "Sobrescrever",
 
   // ---------------------------------------------------------------------
   // graph (views/graph/GraphView.tsx)

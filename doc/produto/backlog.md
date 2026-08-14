@@ -30,6 +30,7 @@ _(nenhum item pendente)_
 | 0012 | Internacionalização do desktop (inglês/português) | [0012-internacionalizacao-desktop.md](specs/0012-internacionalizacao-desktop.md) | 5 | 1 | 90% | 5 | 0.9 | Validação manual ao vivo da troca de idioma nas 22 telas/componentes |
 | 0013 | Caminho do arquivo de storage no dispositivo | [0013-caminho-storage-dispositivo.md](specs/0013-caminho-storage-dispositivo.md) | 5 | 2 | 80% | 2 | 4.0 | Validação manual ao vivo com SQLite/Realm reais (Android/iOS), conferindo o caminho contra `adb`/`realm.path` |
 | 0014 | Limpar dados de storage a partir do desktop | [0014-limpar-storage-desktop.md](specs/0014-limpar-storage-desktop.md) | 5 | 2 | 70% | 4 | 1.8 | Validação manual ao vivo: limpar AsyncStorage inteiro, limpar uma tabela SQLite específica com `exec`, e conferir que um runner sem `exec` responde "não suportado" em vez de travar |
+| 0015 | Exportar/importar o arquivo de banco de dados | [0015-exportar-importar-arquivo-banco.md](specs/0015-exportar-importar-arquivo-banco.md) | 3 | 3 | 50% | 8 | 0.6 | Validação manual ao vivo: exportar de um Android debuggable e de um iOS Simulator reais e abrir o `.db` no DB Browser, importar de volta e reiniciar o app, conferir que num device iOS físico o botão aparece desabilitado com o motivo |
 
 ## Entregue
 

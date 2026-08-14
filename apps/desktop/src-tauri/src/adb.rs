@@ -72,7 +72,7 @@ fn now_ms() -> u64 {
 /// leading `-`: every call site passes the serial as a bare argv element
 /// (`["-s", serial, ...]`), and without this a serial string could
 /// otherwise be interpreted as a flag rather than adb's `-s` argument.
-fn is_valid_serial(serial: &str) -> bool {
+pub(crate) fn is_valid_serial(serial: &str) -> bool {
     !serial.is_empty()
         && !serial.starts_with('-')
         && serial.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
@@ -153,7 +153,7 @@ fn find_adb() -> Option<PathBuf> {
     well_known_sdk_paths().into_iter().find(|candidate| is_executable_file(candidate))
 }
 
-fn build_command(adb_path: &Path) -> Command {
+pub(crate) fn build_command(adb_path: &Path) -> Command {
     let mut cmd = Command::new(adb_path);
     #[cfg(windows)]
     {
@@ -168,7 +168,7 @@ fn build_command(adb_path: &Path) -> Command {
 /// with a kill on expiry — adb's very first invocation implicitly forks its
 /// background daemon and can take a few seconds, and a hung `adb` process
 /// must never wedge the watcher loop.
-async fn run_adb(adb_path: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) async fn run_adb(adb_path: &Path, args: &[&str]) -> Result<String, String> {
     let mut cmd = build_command(adb_path);
     cmd.args(args);
     let child = cmd.output();
@@ -369,13 +369,13 @@ pub async fn retry_adb_reverse(app_handle: AppHandle, status: tauri::State<'_, A
 /// `run_adb` as its own argv element (never a shell), so this isn't the only
 /// thing standing between it and the spawned process, but a leading `-`
 /// could otherwise be read as a flag by `dumpsys`/`pm` rather than a name.
-fn is_valid_package(package: &str) -> bool {
+pub(crate) fn is_valid_package(package: &str) -> bool {
     !package.is_empty()
         && !package.starts_with('-')
         && package.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_'))
 }
 
-fn adb_path_or_err() -> Result<PathBuf, String> {
+pub(crate) fn adb_path_or_err() -> Result<PathBuf, String> {
     find_adb().ok_or_else(|| {
         "adb not found — looked in $SPYGLASS_ADB_PATH, $ANDROID_HOME, $ANDROID_SDK_ROOT, PATH, and the default SDK install location.".to_string()
     })

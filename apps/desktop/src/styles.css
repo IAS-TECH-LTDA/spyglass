@@ -2777,3 +2777,54 @@ button.jgn-row {
   background: transparent;
   color: var(--red);
 }
+
+/* Storage db file export/import (spec 0015) */
+
+.storage-dbfile-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.storage-dbfile-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.storage-dbfile-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.storage-dbfile-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.storage-dbfile-message {
+  font-size: 12px;
+}
+
+.storage-dbfile-message-error {
+  color: var(--red);
+}
+
+.storage-dbfile-message-success {
+  color: var(--green);
+}
+
+.storage-dbfile-unsupported {
+  padding: 8px 16px;
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}

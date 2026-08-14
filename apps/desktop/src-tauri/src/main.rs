@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adb;
+mod db_file;
 #[cfg(target_os = "macos")]
 mod ios_memory;
 mod netinfo;
@@ -12,6 +13,7 @@ use adb::{
     get_adb_status, list_third_party_packages, read_app_memory, read_system_memory, retry_adb_reverse,
     suggest_foreground_package, AdbStatus, AdbStatusHandle,
 };
+use db_file::{export_db_file_android, export_db_file_ios_simulator, import_db_file_android, import_db_file_ios_simulator};
 #[cfg(target_os = "macos")]
 use ios_memory::{find_simulator_pid, list_booted_simulators, read_simulator_memory};
 use netinfo::get_connection_info;
@@ -58,6 +60,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(registry.clone())
         .manage(adb_status.clone())
         .invoke_handler(tauri::generate_handler![
@@ -83,7 +86,15 @@ fn main() {
             #[cfg(target_os = "macos")]
             find_simulator_pid,
             #[cfg(target_os = "macos")]
-            read_simulator_memory
+            read_simulator_memory,
+            // spec 0015 — Storage's Export/Import .db actions. The file
+            // dialog itself (choosing a destination/source path) is a
+            // frontend-only concern via `@tauri-apps/plugin-dialog` — these
+            // only ever move bytes once a path is already chosen.
+            export_db_file_android,
+            import_db_file_android,
+            export_db_file_ios_simulator,
+            import_db_file_ios_simulator
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();

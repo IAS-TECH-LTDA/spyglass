@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { AnyEnvelope } from "spyglass-protocol";
 
 /** Mirrors the Rust `AppInfo` struct (src-tauri/src/registry.rs), serde(rename_all = "camelCase"). */
@@ -176,4 +177,43 @@ export interface SimulatorMemoryInfo {
 
 export function readSimulatorMemory(pid: number): Promise<SimulatorMemoryInfo> {
   return invoke<SimulatorMemoryInfo>("read_simulator_memory", { pid });
+}
+
+// ---------------------------------------------------------------------------
+// Storage db file export/import (spec 0015) — pulling/pushing a relational
+// engine's real backing file (plus its `-wal`/`-shm` siblings). Two backends
+// matching what `StorageLocation.path` (spec 0013) can point at: Android via
+// `adb`/`run-as` (no direct `adb pull`/`push` into an app's private data
+// directory), iOS Simulator via a plain file copy (the reported path is
+// already real on this Mac). No iOS-physical-device variant — there's no
+// equivalent of `run-as` there, so the UI simply doesn't offer the action.
+// ---------------------------------------------------------------------------
+
+/** Returns the file names actually written (main file + whichever siblings existed) into `destDir`. */
+export function exportDbFileAndroid(serial: string, packageName: string, devicePath: string, destDir: string): Promise<string[]> {
+  return invoke<string[]>("export_db_file_android", { serial, package: packageName, devicePath, destDir });
+}
+
+export function importDbFileAndroid(serial: string, packageName: string, localPath: string, devicePath: string): Promise<void> {
+  return invoke<void>("import_db_file_android", { serial, package: packageName, localPath, devicePath });
+}
+
+export function exportDbFileIosSimulator(devicePath: string, destDir: string): Promise<string[]> {
+  return invoke<string[]>("export_db_file_ios_simulator", { devicePath, destDir });
+}
+
+export function importDbFileIosSimulator(localPath: string, devicePath: string): Promise<void> {
+  return invoke<void>("import_db_file_ios_simulator", { localPath, devicePath });
+}
+
+/** Native "choose a folder" dialog for Export .db's destination. `null` if the user cancels. */
+export async function pickExportDestDir(): Promise<string | null> {
+  const result = await openDialog({ directory: true, multiple: false });
+  return typeof result === "string" ? result : null;
+}
+
+/** Native "choose a file" dialog for Import .db's source. `null` if the user cancels. */
+export async function pickImportFile(): Promise<string | null> {
+  const result = await openDialog({ multiple: false });
+  return typeof result === "string" ? result : null;
 }

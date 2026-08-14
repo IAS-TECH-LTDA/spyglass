@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyPatch } from "spyglass-protocol";
-import type { StorageEngine } from "spyglass-protocol";
+import type { StorageEngine, StorageLocation } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
 import type { PendingStorageClear, PendingWrite } from "../../state/connection";
 import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
@@ -11,7 +11,15 @@ import { toJsonPointer } from "../../lib/jsonPointer";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 import { LiveEditBanner } from "../../components/LiveEditBanner";
 import { Trans } from "../../i18n/Trans";
-import { tp, useT } from "../../i18n";
+import { t, tp, useT } from "../../i18n";
+import {
+  exportDbFileAndroid,
+  exportDbFileIosSimulator,
+  importDbFileAndroid,
+  importDbFileIosSimulator,
+  pickExportDestDir,
+  pickImportFile,
+} from "../../ipc";
 import { SchemaDiagram } from "./SchemaDiagram";
 import { inferForeignKeys } from "./inferForeignKeys";
 
@@ -32,6 +40,7 @@ const DETAIL_EXPAND_DEPTH = 6;
 
 export function StorageView({ appId }: { appId: string }) {
   const { t } = useT();
+  const platform = useConnectionStore((s) => s.apps[appId]?.platform);
   const appData = useConnectionStore((s) => s.data[appId]);
   const storage = appData?.storage ?? {};
   const engines = Object.keys(storage) as StorageEngine[];
@@ -157,6 +166,8 @@ export function StorageView({ appId }: { appId: string }) {
         </div>
       )}
 
+      {snapshot?.schema && snapshot.location && <DbFileActions appId={appId} platform={platform} location={snapshot.location} />}
+
       {snapshot?.entries && activeEngine && (
         <KvTable
           appId={appId}
@@ -177,6 +188,143 @@ export function StorageView({ appId }: { appId: string }) {
           rows={snapshot.rows}
         />
       )}
+    </div>
+  );
+}
+
+type DbFileSupport =
+  | { supported: true; kind: "android" }
+  | { supported: true; kind: "ios-simulator" }
+  | { supported: false; reason: string };
+
+/**
+ * What export/import can actually do for this (platform, location) pair
+ * (spec 0015). iOS Simulator detection is a heuristic — there's no signal
+ * in `AppInfo` distinguishing Simulator from a physical device, so this
+ * checks whether the reported path looks like a Simulator container path
+ * (Apple's own convention, always under `.../CoreSimulator/Devices/...`).
+ * A wrong guess here just means the button doesn't appear; it never causes
+ * an attempt against a device that can't support it.
+ */
+function dbFileSupportFor(platform: string | undefined, location: StorageLocation): DbFileSupport {
+  if (platform === "android") return { supported: true, kind: "android" };
+  if (platform === "ios") {
+    if (location.path.includes("CoreSimulator")) return { supported: true, kind: "ios-simulator" };
+    return { supported: false, reason: t("storage.dbFile.iosPhysicalUnsupported") };
+  }
+  return { supported: false, reason: t("storage.dbFile.platformUnsupported") };
+}
+
+/** Reads the same `dm:memory-android-*` keys `MemoryPanel`'s Android picker persists — so a dev who's already picked a device/package there (the common case) never has to pick it again just to export/import a file. */
+function androidIdentityFor(appId: string): { serial: string; packageName: string } | null {
+  const serial = localStorage.getItem(`dm:memory-android-serial:${appId}`);
+  const packageName = localStorage.getItem(`dm:memory-android-package:${appId}`);
+  return serial && packageName ? { serial, packageName } : null;
+}
+
+/** Storage's "Export .db"/"Import .db" actions (spec 0015) — pulls/pushes a relational engine's real backing file, WAL/SHM siblings included. */
+function DbFileActions({ appId, platform, location }: { appId: string; platform: string | undefined; location: StorageLocation }) {
+  const { t } = useT();
+  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
+  const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
+
+  const support = dbFileSupportFor(platform, location);
+
+  if (!support.supported) {
+    return (
+      <div className="storage-dbfile-unsupported" title={support.reason}>
+        {t("storage.dbFile.unsupported")}
+      </div>
+    );
+  }
+
+  const handleExport = async () => {
+    setMessage(null);
+    const destDir = await pickExportDestDir();
+    if (!destDir) return;
+    setBusy("export");
+    try {
+      const exported =
+        support.kind === "android"
+          ? await (async () => {
+              const identity = androidIdentityFor(appId);
+              if (!identity) throw new Error(t("storage.dbFile.needsDeviceSelection"));
+              return exportDbFileAndroid(identity.serial, identity.packageName, location.path, destDir);
+            })()
+          : await exportDbFileIosSimulator(location.path, destDir);
+      setMessage({ kind: "success", text: t("storage.dbFile.exportSuccess", { count: exported.length, dir: destDir }) });
+    } catch (err) {
+      setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handlePickImport = async () => {
+    setMessage(null);
+    const path = await pickImportFile();
+    if (path) setPendingImportPath(path);
+  };
+
+  const runImport = async () => {
+    const localPath = pendingImportPath;
+    setPendingImportPath(null);
+    if (!localPath) return;
+    setBusy("import");
+    try {
+      if (support.kind === "android") {
+        const identity = androidIdentityFor(appId);
+        if (!identity) throw new Error(t("storage.dbFile.needsDeviceSelection"));
+        await importDbFileAndroid(identity.serial, identity.packageName, localPath, location.path);
+      } else {
+        await importDbFileIosSimulator(localPath, location.path);
+      }
+      setMessage({ kind: "success", text: t("storage.dbFile.importSuccess") });
+    } catch (err) {
+      setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="storage-dbfile-actions">
+      <button type="button" className="storage-dbfile-btn" disabled={busy !== null} onClick={() => void handleExport()}>
+        {busy === "export" ? t("storage.dbFile.exporting") : t("storage.dbFile.exportButton")}
+      </button>
+      <button type="button" className="storage-dbfile-btn" disabled={busy !== null} onClick={() => void handlePickImport()}>
+        {busy === "import" ? t("storage.dbFile.importing") : t("storage.dbFile.importButton")}
+      </button>
+      {message && <span className={`storage-dbfile-message storage-dbfile-message-${message.kind}`}>{message.text}</span>}
+      {pendingImportPath && (
+        <ConfirmImportDialog
+          target={location.path.split("/").pop() ?? location.path}
+          onCancel={() => setPendingImportPath(null)}
+          onConfirm={() => void runImport()}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Same visual language as `ConfirmClearDialog` (`.confirm-clear-*` classes), but a plain confirm/cancel rather than "type the name" — picking the exact file via the native OS dialog is already the deliberate step here. */
+function ConfirmImportDialog({ target, onConfirm, onCancel }: { target: string; onConfirm: () => void; onCancel: () => void }) {
+  const { t } = useT();
+  return (
+    <div className="confirm-clear-overlay" onClick={onCancel}>
+      <div className="confirm-clear-dialog" onClick={(e) => e.stopPropagation()}>
+        <h3>{t("storage.dbFile.importConfirmTitle", { target })}</h3>
+        <p>{t("storage.dbFile.importConfirmBody", { target })}</p>
+        <div className="confirm-clear-actions">
+          <button type="button" className="confirm-clear-cancel" onClick={onCancel}>
+            {t("storage.clear.cancelButton")}
+          </button>
+          <button type="button" className="confirm-clear-confirm" onClick={onConfirm}>
+            {t("storage.dbFile.importConfirmButton")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

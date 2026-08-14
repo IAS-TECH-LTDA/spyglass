@@ -19,9 +19,14 @@ monorepo of three pieces that talk over one wire protocol.
   as a diagram; click a field to open it in a side column.
 - **Live editing from the desktop**, dev builds only: change a Storage KV
   value or a Zustand store's state and it applies in the running app
-  immediately, plus a "Clear app caches" action. See the
+  immediately, clear a whole storage engine (or one table) from the UI,
+  plus a "Clear app caches" action. See the
   [`packages/sdk` README](./packages/sdk/README.md#live-editing-from-the-desktop)
   for exactly what this can and can't do.
+- **Storage file access** — see the exact on-device file path behind
+  AsyncStorage/SQLite/Realm/etc. and copy it, or (Android debuggable
+  builds, iOS Simulator) export/import the real `.db` file to inspect in
+  DB Browser/Realm Studio.
 - **Memory/swap monitoring** (Android real devices/emulators, iOS
   Simulator) — device total memory, the connected app's own memory and
   swap, read directly by the desktop app (`adb`/`footprint`), no extra code

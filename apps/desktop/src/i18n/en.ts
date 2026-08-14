@@ -194,6 +194,20 @@ export const en = {
   "storage.clear.confirmPrompt": "Type {target} to confirm.",
   "storage.clear.confirmButton": "Delete permanently",
   "storage.clear.cancelButton": "Cancel",
+  "storage.dbFile.exportButton": "Export .db",
+  "storage.dbFile.importButton": "Import .db",
+  "storage.dbFile.exporting": "Exporting…",
+  "storage.dbFile.importing": "Importing…",
+  "storage.dbFile.unsupported": "Export/Import unavailable",
+  "storage.dbFile.noPath": "No file path reported for this engine.",
+  "storage.dbFile.iosPhysicalUnsupported": "Not available for a physical iOS device — the desktop has no way to reach its private storage.",
+  "storage.dbFile.platformUnsupported": "Not available for this platform.",
+  "storage.dbFile.needsDeviceSelection": "Open the Performance tab once to pick this app's Android device and package, then come back here.",
+  "storage.dbFile.exportSuccess": "Exported {count} file(s) to {dir}.",
+  "storage.dbFile.importSuccess": "Imported — restart the connected app for the new data to take effect.",
+  "storage.dbFile.importConfirmTitle": "Import into {target}?",
+  "storage.dbFile.importConfirmBody": "This overwrites {target} in the connected app. This can't be undone, and the app must be restarted for the change to take effect.",
+  "storage.dbFile.importConfirmButton": "Overwrite",
 
   // ---------------------------------------------------------------------
   // graph (views/graph/GraphView.tsx)
