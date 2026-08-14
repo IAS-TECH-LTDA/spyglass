@@ -33,6 +33,7 @@ export const en = {
   "common.refresh": "Refresh",
   "common.moreCount": "+{count} more",
   "common.copyValue": "Copy value",
+  "common.repoLink": "Questions or found a bug? Visit the GitHub repository",
 
   // ---------------------------------------------------------------------
   // app shell (App.tsx)
@@ -70,6 +71,7 @@ export const en = {
   "settings.tryAgain": "Try again",
   "settings.apps": "Apps",
   "settings.noAppsYet": "No apps connected yet.",
+  "settings.version": "Spyglass {version}",
 
   // ---------------------------------------------------------------------
   // connect (views/connect/ConnectView.tsx)

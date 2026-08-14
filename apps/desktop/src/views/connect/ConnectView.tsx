@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CopyButton } from "../../components/CopyButton";
 import { t, useT, type TranslationKey } from "../../i18n";
 import { Trans } from "../../i18n/Trans";
+import { openRepoLink } from "../../lib/repoLink";
 import {
   getAdbStatus,
   getConnectionInfo,
@@ -288,6 +289,12 @@ export function ConnectView() {
           </div>
           <AdbStatusRow status={adbStatus} onRetry={() => void handleRetry()} retrying={retrying} />
         </div>
+
+        <p className="empty-hint connect-repo-link">
+          <button type="button" className="text-link" onClick={openRepoLink}>
+            {t("common.repoLink")}
+          </button>
+        </p>
       </div>
     </div>
   );

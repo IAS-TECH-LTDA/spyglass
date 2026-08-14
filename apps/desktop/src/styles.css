@@ -59,6 +59,17 @@ body {
   font-size: 13px;
 }
 
+/** A `<button>` styled as an inline link — used for actions that must go through `openUrl` (see `lib/repoLink.ts`) rather than a plain `<a href>`. */
+.text-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+}
+
 .app-pill {
   display: flex;
   align-items: center;
@@ -2258,6 +2269,11 @@ button.jgn-row {
   color: var(--text-muted);
 }
 
+.connect-repo-link {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .connect-status-row code {
   background: var(--bg-elevated);
   padding: 1px 5px;
@@ -2308,6 +2324,15 @@ button.jgn-row {
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+.settings-version {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .alerts-chip-row {

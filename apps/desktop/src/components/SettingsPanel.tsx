@@ -1,5 +1,7 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef, useState } from "react";
 import { appAlertKey } from "../lib/alerts";
+import { openRepoLink } from "../lib/repoLink";
 import { useAlertSettings } from "../state/alertSettings";
 import { useConnectionStore } from "../state/connection";
 import { useLocaleStore, type Locale } from "../state/locale";
@@ -32,6 +34,11 @@ export function SettingsPanel() {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getVersion().then(setVersion);
+  }, []);
 
   const locale = useLocaleStore((s) => s.locale);
   const setLocale = useLocaleStore((s) => s.setLocale);
@@ -191,6 +198,13 @@ export function SettingsPanel() {
               </div>
             ))}
           </div>
+
+          <p className="settings-version">
+            {version && <>{t("settings.version", { version })} · </>}
+            <button type="button" className="text-link" onClick={openRepoLink}>
+              {t("common.repoLink")}
+            </button>
+          </p>
         </div>
       )}
     </div>

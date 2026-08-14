@@ -20,6 +20,7 @@ export const pt = {
   "common.refresh": "Atualizar",
   "common.moreCount": "+{count} mais",
   "common.copyValue": "Copiar valor",
+  "common.repoLink": "Dúvidas ou encontrou um bug? Acesse o repositório no GitHub",
 
   // ---------------------------------------------------------------------
   // app shell (App.tsx)
@@ -57,6 +58,7 @@ export const pt = {
   "settings.tryAgain": "Tentar novamente",
   "settings.apps": "Apps",
   "settings.noAppsYet": "Nenhum app conectado ainda.",
+  "settings.version": "Spyglass {version}",
 
   // ---------------------------------------------------------------------
   // connect (views/connect/ConnectView.tsx)
