@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { CopyButton } from "../../components/CopyButton";
+import { t, useT, type TranslationKey } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
 import {
   getAdbStatus,
   getConnectionInfo,
@@ -11,10 +13,10 @@ import {
 
 type Scenario = "device" | "ios-simulator" | "android-emulator";
 
-const SCENARIOS: Array<{ id: Scenario; label: string }> = [
-  { id: "device", label: "Physical device" },
-  { id: "ios-simulator", label: "iOS Simulator" },
-  { id: "android-emulator", label: "Android emulator" },
+const SCENARIOS: Array<{ id: Scenario; labelKey: TranslationKey }> = [
+  { id: "device", labelKey: "connect.scenario.device" },
+  { id: "ios-simulator", labelKey: "connect.scenario.iosSimulator" },
+  { id: "android-emulator", labelKey: "connect.scenario.androidEmulator" },
 ];
 
 type PackageManager = "npm" | "yarn" | "pnpm";
@@ -87,11 +89,11 @@ function adapterSnippetFor(lib: StateLib): string {
 function noteFor(scenario: Scenario): string {
   switch (scenario) {
     case "ios-simulator":
-      return "Shares this Mac's network — the SDK detects “localhost” automatically.";
+      return t("connect.note.iosSimulator");
     case "android-emulator":
-      return "Auto-detected. Spyglass keeps “adb reverse tcp:8098 tcp:8098” applied for you (status below); without adb the SDK falls back to “10.0.2.2”.";
+      return t("connect.note.androidEmulator");
     case "device":
-      return "Same Wi-Fi as this Mac. The SDK usually detects this from the Metro URL — pass “host” only if it doesn't.";
+      return t("connect.note.device");
   }
 }
 
@@ -108,6 +110,7 @@ function snippetFor(scenario: Scenario, host: string | null): string {
  * connection help, since that's exactly when a dev needs it.
  */
 export function ConnectView() {
+  const { t } = useT();
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
   const [adbStatus, setAdbStatus] = useState<AdbStatus | null>(null);
   const [scenario, setScenario] = useState<Scenario>("device");
@@ -154,15 +157,15 @@ export function ConnectView() {
   return (
     <div className="connect-view">
       <div className="connect-col">
-        <h2>No app connected yet</h2>
+        <h2>{t("connect.title")}</h2>
         <p className="empty-hint">
-          Spyglass is listening on <code>ws://0.0.0.0:{port}</code>. Add the SDK to your app and it shows up here.
+          <Trans k="connect.subtitle" values={{ url: <code>ws://0.0.0.0:{port}</code> }} />
         </p>
 
         <div className="connect-step">
           <span className="connect-step-num">1</span>
           <div className="connect-step-body">
-            <div>Install the SDK</div>
+            <div>{t("connect.step1Title")}</div>
             <nav className="connect-scenarios">
               {PACKAGE_MANAGERS.map((p) => (
                 <button
@@ -186,7 +189,7 @@ export function ConnectView() {
         <div className="connect-step">
           <span className="connect-step-num">2</span>
           <div className="connect-step-body">
-            <div>Pick your scenario</div>
+            <div>{t("connect.step2Title")}</div>
             <nav className="connect-scenarios">
               {SCENARIOS.map((s) => (
                 <button
@@ -196,7 +199,7 @@ export function ConnectView() {
                   style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
                   onClick={() => setScenario(s.id)}
                 >
-                  {s.label}
+                  {t(s.labelKey)}
                 </button>
               ))}
             </nav>
@@ -207,7 +210,7 @@ export function ConnectView() {
           <span className="connect-step-num">3</span>
           <div className="connect-step-body">
             <div>
-              Call <code>init()</code> — usually at the top of <code>App.tsx</code>
+              <Trans k="connect.step3Title" values={{ init: <code>init()</code>, file: <code>App.tsx</code> }} />
             </div>
             <div className="connect-code">
               <code>{snippet}</code>
@@ -220,19 +223,19 @@ export function ConnectView() {
         {scenario === "device" && (
           <div className="connect-addresses">
             <div className="connect-addresses-head">
-              <span>LAN addresses on this machine</span>
+              <span>{t("connect.lanAddresses")}</span>
               <button
                 type="button"
                 className="icon-btn"
-                title="Refresh"
-                aria-label="Refresh LAN addresses"
+                title={t("common.refresh")}
+                aria-label={t("connect.refreshLanAria")}
                 onClick={() => void refreshConnectionInfo()}
               >
                 ⟳
               </button>
             </div>
             {connectionInfo && connectionInfo.addresses.length === 0 && (
-              <p className="empty-hint">No LAN address found — is this machine on Wi-Fi?</p>
+              <p className="empty-hint">{t("connect.noLanAddress")}</p>
             )}
             {connectionInfo?.addresses.map((addr) => (
               <button
@@ -244,7 +247,7 @@ export function ConnectView() {
                 <span className={`dot ${addr.ip === selectedIp ? "dot-on" : "dot-off"}`} />
                 <span className="connect-addr-ip">{addr.ip}</span>
                 <small className="empty-hint">{addr.interfaceName}</small>
-                {addr.isPrimary && <small className="empty-hint">primary</small>}
+                {addr.isPrimary && <small className="empty-hint">{t("connect.primary")}</small>}
                 <CopyButton text={addr.ip} size="sm" />
               </button>
             ))}
@@ -254,7 +257,7 @@ export function ConnectView() {
         <div className="connect-step">
           <span className="connect-step-num">4</span>
           <div className="connect-step-body">
-            <div>Attach a state adapter (optional)</div>
+            <div>{t("connect.step4Title")}</div>
             <nav className="connect-scenarios">
               {STATE_LIBS.map((lib) => (
                 <button
@@ -272,10 +275,7 @@ export function ConnectView() {
               <code>{adapterSnippet}</code>
               <CopyButton text={adapterSnippet} size="sm" />
             </div>
-            <p className="empty-hint">
-              Navigation, storage (AsyncStorage, MMKV, SQLite, Realm, WatermelonDB) and React Query have their
-              own adapters — see the SDK README.
-            </p>
+            <p className="empty-hint">{t("connect.adaptersNote")}</p>
           </div>
         </div>
 
@@ -283,7 +283,7 @@ export function ConnectView() {
           <div className="connect-status-row">
             <span className={`dot ${connectionInfo ? "dot-on" : "dot-off"}`} />
             <span>
-              Listening on <code>ws://0.0.0.0:{port}</code>
+              <Trans k="connect.listeningOn" values={{ url: <code>ws://0.0.0.0:{port}</code> }} />
             </span>
           </div>
           <AdbStatusRow status={adbStatus} onRetry={() => void handleRetry()} retrying={retrying} />
@@ -294,13 +294,14 @@ export function ConnectView() {
 }
 
 function AdbStatusRow({ status, onRetry, retrying }: { status: AdbStatus | null; onRetry: () => void; retrying: boolean }) {
+  const { t } = useT();
   const { label, ok } = describeAdbStatus(status);
   return (
     <div className="connect-status-row">
       <span className={`dot ${ok ? "dot-on" : "dot-off"}`} />
       <span>{label}</span>
       <button type="button" className="icon-btn connect-retry-btn" onClick={onRetry} disabled={retrying}>
-        {retrying ? "Retrying…" : "Retry"}
+        {retrying ? t("common.retrying") : t("common.retry")}
       </button>
     </div>
   );
@@ -308,22 +309,25 @@ function AdbStatusRow({ status, onRetry, retrying }: { status: AdbStatus | null;
 
 function describeAdbStatus(status: AdbStatus | null): { label: string; ok: boolean } {
   if (!status || status.state === "searching") {
-    return { label: "Checking for adb…", ok: false };
+    return { label: t("connect.adb.checking"), ok: false };
   }
   switch (status.state) {
     case "ok":
-      return { label: `adb reverse applied · ${status.devices.map((d) => d.serial).join(", ")}`, ok: true };
+      return { label: t("connect.adb.applied", { devices: status.devices.map((d) => d.serial).join(", ") }), ok: true };
     case "partial": {
       const failed = status.devices.filter((d) => !d.reversed);
       const okCount = status.devices.length - failed.length;
       const detail = failed.map((d) => `${d.serial} (${d.error ?? "failed"})`).join(", ");
-      return { label: `adb reverse applied to ${okCount} of ${status.devices.length} devices — ${detail}`, ok: false };
+      return {
+        label: t("connect.adb.partial", { ok: okCount, total: status.devices.length, detail }),
+        ok: false,
+      };
     }
     case "no-devices":
-      return { label: "adb found, no devices attached — starts automatically once one connects", ok: false };
+      return { label: t("connect.adb.noDevices"), ok: false };
     case "unavailable":
-      return { label: status.message ?? "adb not found", ok: false };
+      return { label: status.message ?? t("connect.adb.notFound"), ok: false };
     case "error":
-      return { label: status.message ?? "adb error", ok: false };
+      return { label: status.message ?? t("connect.adb.error"), ok: false };
   }
 }

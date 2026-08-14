@@ -26,6 +26,8 @@ monorepo of three pieces that talk over one wire protocol.
   Simulator) — device total memory, the connected app's own memory and
   swap, read directly by the desktop app (`adb`/`footprint`), no extra code
   needed in your app at all.
+- **English or Portuguese** — pick the desktop app's language from the
+  settings popover in the topbar; English by default.
 
 <details>
 <summary>More screenshots (State, Storage, Console, Network, Queries, Performance)</summary>

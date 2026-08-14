@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { MemoryPanel } from "../../components/memory/MemoryPanel";
 import type { PerfSample, PerfStall } from "../../state/connection";
 import { useConnectionStore } from "../../state/connection";
+import { useT } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
+import { currentBcp47 } from "../../state/locale";
 
 const CHART_WIDTH = 600;
 const CHART_HEIGHT = 80;
@@ -11,6 +14,7 @@ const CHART_FPS_SCALE = 70;
 const CHART_SAMPLE_COUNT = 60;
 
 export function PerformanceView({ appId }: { appId: string }) {
+  const { t, tp } = useT();
   const perfSamples = useConnectionStore((s) => s.data[appId]?.perfSamples ?? []);
   const perfStalls = useConnectionStore((s) => s.data[appId]?.perfStalls ?? []);
   const navGraph = useConnectionStore((s) => s.data[appId]?.navGraph);
@@ -34,9 +38,14 @@ export function PerformanceView({ appId }: { appId: string }) {
     <div className="perf-view">
       <div className="perf-toolbar">
         <span className="perf-count">
-          {perfSamples.length} sample{perfSamples.length === 1 ? "" : "s"} · {perfStalls.length} stall{perfStalls.length === 1 ? "" : "s"}
+          {tp("performance.sampleCount", perfSamples.length)} · {tp("performance.stallCount", perfStalls.length)}
         </span>
-        <button className="icon-btn perf-clear" title="Clear performance data" aria-label="Clear performance data" onClick={() => clearPerf(appId)}>
+        <button
+          className="icon-btn perf-clear"
+          title={t("performance.clearAria")}
+          aria-label={t("performance.clearAria")}
+          onClick={() => clearPerf(appId)}
+        >
           <TrashIcon />
         </button>
       </div>
@@ -48,16 +57,19 @@ export function PerformanceView({ appId }: { appId: string }) {
               {latest ? (
                 <div className="perf-fps-readout">
                   <span className={`perf-fps-value perf-fps-${fpsSeverity(latest.fps)}`}>{latest.fps}</span>
-                  <span className="perf-fps-label">fps</span>
+                  <span className="perf-fps-label">{t("performance.fps")}</span>
                 </div>
               ) : (
-                <p className="muted">Waiting for the first sample…</p>
+                <p className="muted">{t("performance.waitingFirstSample")}</p>
               )}
               {perfSamples.length > 1 && <FpsChart samples={perfSamples} />}
             </>
           ) : (
             <p className="muted">
-              No performance data yet. Attach <code>attachPerformance()</code> from <code>spyglass-react/performance</code>.
+              <Trans
+                k="performance.emptyState"
+                values={{ call: <code>attachPerformance()</code>, module: <code>spyglass-react/performance</code> }}
+              />
             </p>
           )}
 
@@ -65,9 +77,9 @@ export function PerformanceView({ appId }: { appId: string }) {
         </section>
 
         <section className="perf-stalls">
-          <h3>Stalls</h3>
+          <h3>{t("performance.stalls")}</h3>
           {perfStalls.length === 0 ? (
-            <p className="muted">No stalls recorded — the JS thread hasn't blocked for longer than the adapter's threshold.</p>
+            <p className="muted">{t("performance.noStalls")}</p>
           ) : (
             <ul className="perf-stall-list">
               {perfStalls.map((stall, i) => (
@@ -86,7 +98,7 @@ function StallRow({ stall, screen }: { stall: PerfStall; screen: string | undefi
     <li className="perf-stall-item">
       <span className={`perf-fps-${stallSeverity(stall.durationMs)}`}>{stall.durationMs}ms</span>
       {screen && <span className="badge">{screen}</span>}
-      <span className="perf-stall-time">{new Date(stall.ts).toLocaleString()}</span>
+      <span className="perf-stall-time">{new Date(stall.ts).toLocaleString(currentBcp47())}</span>
     </li>
   );
 }
@@ -135,7 +147,7 @@ function FpsChart({ samples }: { samples: PerfSample[] }) {
           <line x1={hovered.x} y1={0} x2={hovered.x} y2={CHART_HEIGHT} className="perf-chart-crosshair" />
           <circle cx={hovered.x} cy={hovered.y} r={3} className="perf-chart-dot" />
           <text x={Math.min(hovered.x + 6, CHART_WIDTH - 90)} y={12} className="perf-chart-tooltip">
-            {hovered.sample.fps} fps · {new Date(hovered.sample.ts).toLocaleTimeString()}
+            {hovered.sample.fps} fps · {new Date(hovered.sample.ts).toLocaleTimeString(currentBcp47())}
           </text>
         </>
       )}

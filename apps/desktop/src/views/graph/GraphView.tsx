@@ -6,6 +6,9 @@ import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 import type { NavEdge, NavNode, NavTransitionEvent } from "../../state/connection";
 import { useConnectionStore } from "../../state/connection";
+import { t, useT } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
+import { currentBcp47, useLocaleStore } from "../../state/locale";
 
 interface ScreenNodeData extends Record<string, unknown> {
   name: string;
@@ -23,6 +26,7 @@ const CLUSTER_GAP = 32;
 const EDGE_HIGHLIGHT_WINDOW_MS = 1200;
 
 export function GraphView({ appId }: { appId: string }) {
+  const { t, tp } = useT();
   const navGraph = useConnectionStore((s) => s.data[appId]?.navGraph);
   const clearNavGraph = useConnectionStore((s) => s.clearNavGraph);
   const [selected, setSelected] = useState<string | null>(null);
@@ -39,10 +43,19 @@ export function GraphView({ appId }: { appId: string }) {
     handleEdge: "left",
   });
 
+  // `paramsSummary` (used by `layout` -> `ScreenNode`'s data) reads the
+  // locale-dependent "no params"/"+N more" strings from the standalone
+  // `t()`, not from this component's own render — so the locale itself has
+  // to be a memo dependency, or switching language wouldn't recompute the
+  // canvas node labels until the graph data next changes.
+  const locale = useLocaleStore((s) => s.locale);
   const nodeList = useMemo(() => Object.values(navGraph?.nodes ?? {}), [navGraph]);
   const edgeList = useMemo(() => Object.values(navGraph?.edges ?? {}), [navGraph]);
 
-  const { nodes, edges } = useMemo(() => layout(nodeList, edgeList, navGraph?.activeName), [nodeList, edgeList, navGraph?.activeName]);
+  const { nodes, edges } = useMemo(
+    () => layout(nodeList, edgeList, navGraph?.activeName),
+    [nodeList, edgeList, navGraph?.activeName, locale],
+  );
 
   const selectedNode = selected ? navGraph?.nodes[selected] : undefined;
 
@@ -55,8 +68,10 @@ export function GraphView({ appId }: { appId: string }) {
     return (
       <div className="view-empty">
         <p>
-          No navigation events yet. Call <code>attachNavigation(navigationRef)</code> from{" "}
-          <code>spyglass-react/navigation</code> and navigate to a screen in the app.
+          <Trans
+            k="graph.emptyState"
+            values={{ call: <code>attachNavigation(navigationRef)</code>, module: <code>spyglass-react/navigation</code> }}
+          />
         </p>
       </div>
     );
@@ -73,12 +88,12 @@ export function GraphView({ appId }: { appId: string }) {
     <div className="nav-view">
       <div className="nav-toolbar">
         <span className="nav-count">
-          {nodeList.length} screen{nodeList.length === 1 ? "" : "s"} · {edgeList.length} link{edgeList.length === 1 ? "" : "s"}
+          {tp("graph.screenCount", nodeList.length)} · {tp("graph.linkCount", edgeList.length)}
         </span>
         <button
           className="icon-btn nav-clear"
-          title="Clear navigation graph"
-          aria-label="Clear navigation graph"
+          title={t("graph.clearAria")}
+          aria-label={t("graph.clearAria")}
           onClick={() => {
             clearNavGraph(appId);
             setSelected(null);
@@ -108,7 +123,7 @@ export function GraphView({ appId }: { appId: string }) {
           onMouseDown={startResize}
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize detail panel"
+          aria-label={t("graph.resizeDetailAria")}
         />
 
         <aside className="nav-detail">
@@ -116,8 +131,8 @@ export function GraphView({ appId }: { appId: string }) {
             <>
               <h3>{selectedNode.name}</h3>
               <div className="nav-detail-meta">
-                <span>{selectedNode.visits} visit{selectedNode.visits === 1 ? "" : "s"}</span>
-                <span>Last seen {new Date(selectedNode.lastSeenAt).toLocaleTimeString()}</span>
+                <span>{tp("graph.visitCount", selectedNode.visits)}</span>
+                <span>{t("graph.lastSeen", { time: new Date(selectedNode.lastSeenAt).toLocaleTimeString(currentBcp47()) })}</span>
               </div>
               {selectedNode.params && Object.keys(selectedNode.params).length > 0 ? (
                 // No inspector column here — this panel *is* already the
@@ -125,30 +140,30 @@ export function GraphView({ appId }: { appId: string }) {
                 // would be a panel-in-a-panel for no benefit.
                 <JsonGraph data={selectedNode.params} defaultExpandDepth={2} inspector={false} />
               ) : (
-                <p className="muted">No params.</p>
+                <p className="muted">{t("graph.noParams")}</p>
               )}
 
-              <h3 className="nav-history-heading">History</h3>
+              <h3 className="nav-history-heading">{t("graph.history")}</h3>
               {history.length === 0 ? (
-                <p className="muted">No transitions yet.</p>
+                <p className="muted">{t("graph.noTransitionsYet")}</p>
               ) : (
                 <ul className="nav-history">
-                  {history.map((t, i) => (
+                  {history.map((transition, i) => (
                     <li key={i} className="nav-history-item">
-                      {t.to === selectedNode.name ? (
-                        <span className="nav-history-arrow">← {t.from ?? "(start)"}</span>
+                      {transition.to === selectedNode.name ? (
+                        <span className="nav-history-arrow">← {transition.from ?? t("graph.start")}</span>
                       ) : (
-                        <span className="nav-history-arrow">→ {t.to}</span>
+                        <span className="nav-history-arrow">→ {transition.to}</span>
                       )}
-                      {t.action && <span className="badge">{t.action}</span>}
-                      <span className="nav-history-time">{new Date(t.ts).toLocaleString()}</span>
+                      {transition.action && <span className="badge">{transition.action}</span>}
+                      <span className="nav-history-time">{new Date(transition.ts).toLocaleString(currentBcp47())}</span>
                     </li>
                   ))}
                 </ul>
               )}
             </>
           ) : (
-            <p className="muted">Select a screen to see its params and history.</p>
+            <p className="muted">{t("graph.selectScreen")}</p>
           )}
         </aside>
       </div>
@@ -157,13 +172,13 @@ export function GraphView({ appId }: { appId: string }) {
 }
 
 function paramsSummary(params: Record<string, unknown> | undefined): string {
-  if (!params) return "no params";
+  if (!params) return t("graph.noParamsSummary");
   const keys = Object.keys(params);
-  if (keys.length === 0) return "no params";
+  if (keys.length === 0) return t("graph.noParamsSummary");
   const [first, ...rest] = keys;
   const firstValue = params[first];
   const preview = `${first}: ${typeof firstValue === "object" && firstValue !== null ? "{…}" : String(firstValue)}`;
-  return rest.length > 0 ? `${preview} · +${rest.length} more` : preview;
+  return rest.length > 0 ? `${preview} · ${t("common.moreCount", { count: rest.length })}` : preview;
 }
 
 function ScreenNode({ data }: NodeProps & { data: ScreenNodeData }) {

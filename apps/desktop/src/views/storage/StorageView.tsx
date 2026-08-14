@@ -9,6 +9,8 @@ import { CopyButton } from "../../components/CopyButton";
 import { toJsonPointer } from "../../lib/jsonPointer";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 import { LiveEditBanner } from "../../components/LiveEditBanner";
+import { Trans } from "../../i18n/Trans";
+import { tp, useT } from "../../i18n";
 import { SchemaDiagram } from "./SchemaDiagram";
 import { inferForeignKeys } from "./inferForeignKeys";
 
@@ -61,8 +63,13 @@ export function StorageView({ appId }: { appId: string }) {
     return (
       <div className="view-empty">
         <p>
-          No storage engine connected yet. Attach a storage adapter, e.g. <code>attachAsyncStorage(AsyncStorage)</code>{" "}
-          from <code>spyglass-react/storage/async-storage</code>.
+          <Trans
+            k="storage.emptyState"
+            values={{
+              call: <code>attachAsyncStorage(AsyncStorage)</code>,
+              module: <code>spyglass-react/storage/async-storage</code>,
+            }}
+          />
         </p>
       </div>
     );
@@ -120,6 +127,7 @@ function KvTable({
   canWrite: boolean;
   highlightKey?: string | null;
 }) {
+  const { t } = useT();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   // A highlighted row auto-expands, same as clicking it — otherwise the
@@ -128,21 +136,17 @@ function KvTable({
     if (highlightKey) setExpandedKey(highlightKey);
   }, [highlightKey]);
 
-  if (entries.length === 0) return <div className="view-empty">Empty.</div>;
+  if (entries.length === 0) return <div className="view-empty">{t("storage.empty")}</div>;
 
   return (
     <div className="table-rows">
-      {canWrite && (
-        <LiveEditBanner noticeId="storage-edit">
-          Editar um valor aqui grava imediatamente na storage do app conectado.
-        </LiveEditBanner>
-      )}
+      {canWrite && <LiveEditBanner noticeId="storage-edit">{t("storage.editBanner")}</LiveEditBanner>}
       <table className="data-table">
         <thead>
           <tr>
             <th className="row-toggle-cell"></th>
-            <th>Key</th>
-            <th>Value</th>
+            <th>{t("storage.key")}</th>
+            <th>{t("storage.value")}</th>
           </tr>
         </thead>
         <tbody>
@@ -187,6 +191,7 @@ function KvRow({
   canWrite: boolean;
   highlighted?: boolean;
 }) {
+  const { t } = useT();
   const sendStorageWrite = useConnectionStore((s) => s.sendStorageWrite);
   const pendingWrites = useConnectionStore((s) => s.data[appId]?.pendingWrites);
   const [editedPathKey, setEditedPathKey] = useState<string | null>(null);
@@ -232,7 +237,7 @@ function KvRow({
       setRawMode(false);
       setRawError(null);
     } catch (err) {
-      setRawError(err instanceof Error ? err.message : "Invalid JSON");
+      setRawError(err instanceof Error ? err.message : t("storage.invalidJson"));
     }
   };
 
@@ -253,10 +258,10 @@ function KvRow({
         <span>{entry.key}</span>
         {canWrite && (
           <button type="button" className="kv-raw-toggle" onClick={() => (rawMode ? setRawMode(false) : openRawEditor())}>
-            {rawMode ? "Cancel" : "Edit raw JSON"}
+            {rawMode ? t("common.cancel") : t("storage.editRawJson")}
           </button>
         )}
-        <CopyButton size="sm" title="Copy value" text={() => JSON.stringify(entry.value, null, 2)} />
+        <CopyButton size="sm" title={t("common.copyValue")} text={() => JSON.stringify(entry.value, null, 2)} />
       </div>
       {rawMode ? (
         <div className="kv-raw-editor">
@@ -269,7 +274,7 @@ function KvRow({
           />
           {rawError && <p className="kv-raw-error">{rawError}</p>}
           <button type="button" className="btn-accent" onClick={saveRawEditor}>
-            Save
+            {t("common.save")}
           </button>
         </div>
       ) : (
@@ -286,6 +291,7 @@ function RelationalStorage({
   schema: import("spyglass-protocol").TableSchema[];
   rows: Record<string, unknown[]>;
 }) {
+  const { t } = useT();
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [highlightRowId, setHighlightRowId] = useState<string | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -341,14 +347,14 @@ function RelationalStorage({
       style={{ gridTemplateColumns: tableName ? `220px 1fr 6px ${detailWidth}px` : "220px 1fr" }}
     >
       <aside className="side-list">
-        {schema.map((t) => (
+        {schema.map((table) => (
           <button
-            key={t.name}
-            className={`side-item ${t.name === tableName ? "active" : ""}`}
-            onClick={() => selectTable(t.name)}
+            key={table.name}
+            className={`side-item ${table.name === tableName ? "active" : ""}`}
+            onClick={() => selectTable(table.name)}
           >
-            <span className="badge">{(rows[t.name] ?? []).length} rows</span>
-            <span className="side-item-label">{t.name}</span>
+            <span className="badge">{t("storage.rowsCount", { count: (rows[table.name] ?? []).length })}</span>
+            <span className="side-item-label">{table.name}</span>
           </button>
         ))}
       </aside>
@@ -361,7 +367,7 @@ function RelationalStorage({
           onMouseDown={startResize}
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize detail panel"
+          aria-label={t("storage.resizeDetailAria")}
         />
       )}
 
@@ -369,7 +375,7 @@ function RelationalStorage({
         <aside className="schema-detail-panel">
           <h3>{tableName}</h3>
           {tableRows.length === 0 ? (
-            <div className="view-empty">No rows.</div>
+            <div className="view-empty">{t("storage.noRows")}</div>
           ) : (
             <ul className="schema-rows-list">
               {tableRows.map((row, i) => {
@@ -466,6 +472,7 @@ function Cell({
   onNavigate: (table: string, id: string) => void;
   detailed?: boolean;
 }) {
+  const { t } = useT();
   if (value === null || value === undefined) return null;
 
   if (targetTable) {
@@ -473,7 +480,7 @@ function Cell({
     return (
       <button
         className="fk-link"
-        title={`Go to ${targetTable}.id = ${id}`}
+        title={t("storage.goToAria", { table: targetTable, id })}
         onClick={(e) => {
           e.stopPropagation();
           onNavigate(targetTable, id);
@@ -497,10 +504,9 @@ function Cell({
 function previewValue(value: unknown): string {
   if (value === null || value === undefined) return String(value);
   if (typeof value === "string") return value.length > 80 ? `${value.slice(0, 80)}…` : value;
-  if (Array.isArray(value)) return `[…] ${value.length} item${value.length === 1 ? "" : "s"}`;
+  if (Array.isArray(value)) return tp("jsonGraph.itemCount", value.length);
   if (typeof value === "object") {
-    const keys = Object.keys(value as object);
-    return `{…} ${keys.length} key${keys.length === 1 ? "" : "s"}`;
+    return tp("jsonGraph.keyCount", Object.keys(value as object).length);
   }
   return String(value);
 }

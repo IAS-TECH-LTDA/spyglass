@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { t } from "../i18n";
 
 interface Props {
   children: ReactNode;
@@ -32,14 +33,11 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="error-boundary">
           <div className="error-boundary-body">
-            <h2>Something went wrong</h2>
-            <p className="empty-hint">
-              A connected app sent data Spyglass couldn't render. This is usually recoverable — reload the
-              window to continue.
-            </p>
+            <h2>{t("errorBoundary.title")}</h2>
+            <p className="empty-hint">{t("errorBoundary.body")}</p>
             <pre className="error-boundary-message">{this.state.error.message}</pre>
             <button type="button" className="btn-accent" onClick={() => window.location.reload()}>
-              Reload
+              {t("errorBoundary.reload")}
             </button>
           </div>
         </div>

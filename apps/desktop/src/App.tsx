@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { AlertSettingsPanel } from "./components/AlertSettingsPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 import { SplashScreen } from "./components/SplashScreen";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { useT, type TranslationKey } from "./i18n";
 import { forgetApp, getCachedMessages, listApps, onAppConnected, onAppDisconnected, onMessage } from "./ipc";
 import { handleEnvelopeForAlerts, primeAlerts } from "./lib/alertRunner";
 import { useConnectionStore, type Tab } from "./state/connection";
@@ -16,14 +17,14 @@ import { NetworkView } from "./views/network/NetworkView";
 import { PerformanceView } from "./views/performance/PerformanceView";
 import "./styles.css";
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "graph", label: "Navigation" },
-  { id: "stores", label: "State" },
-  { id: "storage", label: "Storage" },
-  { id: "queries", label: "Queries" },
-  { id: "logs", label: "Console" },
-  { id: "network", label: "Network" },
-  { id: "performance", label: "Performance" },
+const TABS: Array<{ id: Tab; labelKey: TranslationKey }> = [
+  { id: "graph", labelKey: "app.tabs.navigation" },
+  { id: "stores", labelKey: "app.tabs.state" },
+  { id: "storage", labelKey: "app.tabs.storage" },
+  { id: "queries", labelKey: "app.tabs.queries" },
+  { id: "logs", labelKey: "app.tabs.console" },
+  { id: "network", labelKey: "app.tabs.network" },
+  { id: "performance", labelKey: "app.tabs.performance" },
 ];
 
 function formatBadgeCount(count: number): string {
@@ -37,6 +38,7 @@ const UPDATE_CHECK_DELAY_MS = 10_000;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export default function App() {
+  const { t } = useT();
   const apps = useConnectionStore((s) => s.apps);
   const data = useConnectionStore((s) => s.data);
   const selectedAppId = useConnectionStore((s) => s.selectedAppId);
@@ -111,9 +113,9 @@ export default function App() {
       <SplashScreen ready={ready} />
       <UpdateBanner />
       <header className="topbar">
-        <div className="brand">Spyglass</div>
+        <div className="brand">{t("app.brand")}</div>
         <div className="app-pills">
-          {appList.length === 0 && <span className="empty-hint">Waiting for an app…</span>}
+          {appList.length === 0 && <span className="empty-hint">{t("app.waitingForApp")}</span>}
           {appList.map((app) => {
             const alerts = data[app.appId]?.alerts;
             const unseen = (alerts?.log ?? 0) + (alerts?.network ?? 0);
@@ -126,8 +128,8 @@ export default function App() {
                 </button>
                 <button
                   className="app-pill-close"
-                  title="Remove from list"
-                  aria-label={`Remove ${app.appName}`}
+                  title={t("app.removeFromList")}
+                  aria-label={t("app.removeAppAria", { name: app.appName })}
                   onClick={() => handleForget(app.appId)}
                 >
                   ×
@@ -136,18 +138,18 @@ export default function App() {
             );
           })}
         </div>
-        <AlertSettingsPanel />
+        <SettingsPanel />
       </header>
 
       {selectedAppId ? (
         <>
           <nav className="tabs">
-            {TABS.map((t) => {
+            {TABS.map((tabDef) => {
               const alerts = data[selectedAppId]?.alerts;
-              const unseen = t.id === "logs" ? (alerts?.log ?? 0) : t.id === "network" ? (alerts?.network ?? 0) : 0;
+              const unseen = tabDef.id === "logs" ? (alerts?.log ?? 0) : tabDef.id === "network" ? (alerts?.network ?? 0) : 0;
               return (
-                <button key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
-                  {t.label}
+                <button key={tabDef.id} className={`tab ${tab === tabDef.id ? "active" : ""}`} onClick={() => setTab(tabDef.id)}>
+                  {t(tabDef.labelKey)}
                   {unseen > 0 && <span className="alert-badge tab-badge">{formatBadgeCount(unseen)}</span>}
                 </button>
               );

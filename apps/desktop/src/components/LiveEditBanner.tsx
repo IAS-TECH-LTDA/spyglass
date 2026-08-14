@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useUiNotices } from "../state/uiNotices";
+import { useT } from "../i18n";
 
 /**
  * Dismissible explanation banner shown at the top of any screen that can
@@ -15,6 +16,7 @@ import { useUiNotices } from "../state/uiNotices";
  * dismissed (see StorageView/StoresView/QueriesView/MemoryPanel).
  */
 export function LiveEditBanner({ noticeId, children }: { noticeId: string; children: ReactNode }) {
+  const { t } = useT();
   const dismissed = useUiNotices((s) => s.isDismissed(noticeId));
   const dismiss = useUiNotices((s) => s.dismiss);
 
@@ -27,8 +29,8 @@ export function LiveEditBanner({ noticeId, children }: { noticeId: string; child
         type="button"
         className="live-edit-banner-dismiss"
         onClick={() => dismiss(noticeId)}
-        aria-label="Dispensar aviso"
-        title="Dispensar aviso"
+        aria-label={t("liveEditBanner.dismissAria")}
+        title={t("liveEditBanner.dismissAria")}
       >
         ×
       </button>

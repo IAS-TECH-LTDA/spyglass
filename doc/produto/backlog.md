@@ -27,6 +27,7 @@ _(nenhum item pendente)_
 | 0009 | Auto-update do desktop via GitHub Releases | [0009-auto-update-desktop.md](specs/0009-auto-update-desktop.md) | 8 | 3 | 90% | 5 | 4.3 | Pré-requisitos manuais (criar o repo no GitHub, gerar as chaves minisign, secrets Apple/updater), primeiro release real e teste em máquina limpa (CA6–CA8) |
 | 0010 | Escrita e controle ao vivo de Queries (React Query) | [0010-escrita-controle-queries.md](specs/0010-escrita-controle-queries.md) | 5 | 2 | 75% | 4 | 1.9 | Depende de release novo do SDK publicado; validação manual ao vivo com um app RN real (edição, os 4 comandos, caso do `queryKey` com `Date`) |
 | 0011 | Destaque em telas editáveis + correlação Network↔Queries/Storage | [0011-destaque-edicao-e-correlacao-network.md](specs/0011-destaque-edicao-e-correlacao-network.md) | 7 | 2 | 85% | 3 | 4.0 | Validação manual ao vivo (banner/destaque nas 4 telas, navegação pelos chips "Related", caso de ambiguidade proposital) |
+| 0012 | Internacionalização do desktop (inglês/português) | [0012-internacionalizacao-desktop.md](specs/0012-internacionalizacao-desktop.md) | 5 | 1 | 90% | 5 | 0.9 | Validação manual ao vivo da troca de idioma nas 22 telas/componentes |
 
 ## Entregue
 

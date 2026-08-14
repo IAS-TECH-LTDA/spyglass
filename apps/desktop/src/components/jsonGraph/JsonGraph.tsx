@@ -6,6 +6,7 @@ import { JsonInspectorPanel } from "./JsonInspectorPanel";
 import { JsonValueNode, JsonValueXyflowNode } from "./JsonValueNode";
 import { layoutNodes } from "../../lib/dagreLayout";
 import { JsonTree } from "../JsonTree";
+import { useT } from "../../i18n";
 
 export type { JsonGraphEditable } from "./buildJsonGraph";
 
@@ -38,6 +39,7 @@ const ROW_HEIGHT = 22;
 const GRAPH_MAX_BYTES = 256 * 1024;
 
 export function JsonGraph({ data, rootLabel, defaultExpandDepth = 1, editable, height, inspector = true }: JsonGraphProps) {
+  const { t } = useT();
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [expandedOverflow, setExpandedOverflow] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<{ nodeId: string; pathKey: string | null } | null>(null);
@@ -73,7 +75,7 @@ export function JsonGraph({ data, rootLabel, defaultExpandDepth = 1, editable, h
   if (oversized || !graph) {
     return (
       <div className="json-graph-fallback">
-        <p className="empty-hint">Large payload — showing tree view instead of a diagram.</p>
+        <p className="empty-hint">{t("jsonGraph.largePayload")}</p>
         <JsonTree data={data} defaultExpandDepth={defaultExpandDepth} rootLabel={rootLabel} />
       </div>
     );

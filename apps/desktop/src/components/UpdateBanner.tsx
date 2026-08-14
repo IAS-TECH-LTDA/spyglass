@@ -1,4 +1,5 @@
 import { useUpdaterStore } from "../state/updater";
+import { useT } from "../i18n";
 
 /**
  * Non-blocking strip above the topbar, not a modal and not a tray menu item
@@ -10,6 +11,7 @@ import { useUpdaterStore } from "../state/updater";
  * an update entry would change that click behavior for no real gain here.
  */
 export function UpdateBanner() {
+  const { t } = useT();
   const status = useUpdaterStore((s) => s.status);
   const version = useUpdaterStore((s) => s.version);
   const notes = useUpdaterStore((s) => s.notes);
@@ -28,7 +30,7 @@ export function UpdateBanner() {
       {status === "available" && (
         <>
           <span>
-            Spyglass {version} is available
+            {t("update.available", { version: version ?? "" })}
             {/* Release notes come from the `latest.json` payload over IPC, never
                 fetched from the webview — rendered as plain text on purpose,
                 never dangerouslySetInnerHTML, since this string originates
@@ -37,10 +39,10 @@ export function UpdateBanner() {
           </span>
           <div className="update-banner-actions">
             <button type="button" className="update-banner-btn update-banner-btn-primary" onClick={() => void download()}>
-              Update
+              {t("update.updateBtn")}
             </button>
             <button type="button" className="update-banner-btn" onClick={dismiss}>
-              Later
+              {t("update.later")}
             </button>
           </div>
         </>
@@ -48,7 +50,7 @@ export function UpdateBanner() {
 
       {status === "downloading" && (
         <>
-          <span>Downloading Spyglass {version}…</span>
+          <span>{t("update.downloading", { version: version ?? "" })}</span>
           <div className="update-banner-progress-track">
             <div
               className="update-banner-progress-fill"
@@ -60,10 +62,10 @@ export function UpdateBanner() {
 
       {status === "ready" && (
         <>
-          <span>Spyglass {version} is ready — restart to finish updating.</span>
+          <span>{t("update.ready", { version: version ?? "" })}</span>
           <div className="update-banner-actions">
             <button type="button" className="update-banner-btn update-banner-btn-primary" onClick={() => void restart()}>
-              Restart now
+              {t("update.restartNow")}
             </button>
           </div>
         </>
@@ -71,13 +73,13 @@ export function UpdateBanner() {
 
       {status === "error" && (
         <>
-          <span>Couldn't install the Spyglass {version ?? ""} update.</span>
+          <span>{t("update.error", { version: version ?? "" })}</span>
           <div className="update-banner-actions">
             <button type="button" className="update-banner-btn update-banner-btn-primary" onClick={() => void runCheck()}>
-              Try again
+              {t("update.tryAgain")}
             </button>
             <button type="button" className="update-banner-btn" onClick={dismiss}>
-              Dismiss
+              {t("update.dismiss")}
             </button>
           </div>
         </>

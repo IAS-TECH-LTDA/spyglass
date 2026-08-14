@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { JsonGraphEditable, JsonGraphNode, JsonRow } from "./buildJsonGraph";
 import { CopyButton } from "../CopyButton";
+import { t, useT } from "../../i18n";
 
 export interface JsonInspectorPanelProps {
   node: JsonGraphNode;
@@ -28,7 +29,9 @@ export interface JsonInspectorPanelProps {
  * losing track of which one they're looking at among the node's other rows.
  */
 export function JsonInspectorPanel({ node, row, editable, onSelectRow, onToggleExpand, onToggleOverflow, onClose }: JsonInspectorPanelProps) {
-  const pathLabel = row ? (row.path.length === 0 ? "(root)" : row.path.join(".")) : node.label || "(root)";
+  const { t } = useT();
+  const rootLabel = t("jsonInspector.root");
+  const pathLabel = row ? (row.path.length === 0 ? rootLabel : row.path.join(".")) : node.label || rootLabel;
 
   const handleRowClick = (r: JsonRow) => {
     if (r.kind === "collapsed") {
@@ -49,9 +52,15 @@ export function JsonInspectorPanel({ node, row, editable, onSelectRow, onToggleE
           {pathLabel}
         </span>
         {row && (row.kind === "primitive" || row.kind === "inline-array") && (
-          <CopyButton size="sm" title="Copy value" text={() => JSON.stringify(row.value, null, 2)} />
+          <CopyButton size="sm" title={t("common.copyValue")} text={() => JSON.stringify(row.value, null, 2)} />
         )}
-        <button type="button" className="icon-btn json-inspector-close" title="Close" aria-label="Close" onClick={onClose}>
+        <button
+          type="button"
+          className="icon-btn json-inspector-close"
+          title={t("common.close")}
+          aria-label={t("common.close")}
+          onClick={onClose}
+        >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
@@ -62,12 +71,12 @@ export function JsonInspectorPanel({ node, row, editable, onSelectRow, onToggleE
 
       {node.rows.length > 0 && (
         <div className="json-inspector-fields">
-          <h4>Fields</h4>
+          <h4>{t("jsonInspector.fields")}</h4>
           <table className="json-inspector-table">
             <thead>
               <tr>
-                <th>Field</th>
-                <th>Value</th>
+                <th>{t("jsonInspector.field")}</th>
+                <th>{t("jsonInspector.value")}</th>
               </tr>
             </thead>
             <tbody>
@@ -92,6 +101,7 @@ export function JsonInspectorPanel({ node, row, editable, onSelectRow, onToggleE
 }
 
 function FieldEditor({ node, row, editable }: { node: JsonGraphNode; row: JsonRow; editable?: JsonGraphEditable }) {
+  const { t } = useT();
   const canEdit = Boolean(editable) && !editable?.disabled && row.kind === "primitive";
   const statusKey = row.path.join(".");
   const status = editable?.status?.[statusKey];
@@ -101,7 +111,7 @@ function FieldEditor({ node, row, editable }: { node: JsonGraphNode; row: JsonRo
     return (
       <div className="json-inspector-editor">
         <p className="json-inspector-circular">
-          Circular reference — {node.label || "this node"} refers back to an ancestor, nothing to show here.
+          {t("jsonInspector.circularRef", { label: node.label || t("jsonInspector.thisNode") })}
         </p>
       </div>
     );
@@ -133,7 +143,7 @@ function FieldEditor({ node, row, editable }: { node: JsonGraphNode; row: JsonRo
       {canEdit && (
         <div className="json-inspector-editor-actions">
           <button type="button" className="btn-accent" disabled={status === "pending"} onClick={save}>
-            Save
+            {t("common.save")}
           </button>
           {status && <span className={`jgn-status-dot jgn-status-dot-${status}`} title={status} />}
         </div>
@@ -148,7 +158,7 @@ function fieldPreview(row: JsonRow): string {
     case "overflow":
       return row.summary ?? "";
     case "circular":
-      return "[Circular]";
+      return t("jsonTree.circular");
     case "child-ref":
       return "→";
     default: {

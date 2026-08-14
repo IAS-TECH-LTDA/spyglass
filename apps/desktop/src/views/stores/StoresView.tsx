@@ -7,8 +7,11 @@ import type { JsonGraphEditable } from "../../components/jsonGraph/JsonGraph";
 import { CopyButton } from "../../components/CopyButton";
 import { LiveEditBanner } from "../../components/LiveEditBanner";
 import { toJsonPointer } from "../../lib/jsonPointer";
+import { useT } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
 
 export function StoresView({ appId }: { appId: string }) {
+  const { t, tp } = useT();
   const appData = useConnectionStore((s) => s.data[appId]);
   const stores = appData?.stores ?? {};
   const storeIds = Object.keys(stores);
@@ -23,8 +26,13 @@ export function StoresView({ appId }: { appId: string }) {
     return (
       <div className="view-empty">
         <p>
-          No state store connected yet. Attach a state adapter, e.g.{" "}
-          <code>createSpyglassReduxMiddleware()</code> from <code>spyglass-react/state/redux</code>.
+          <Trans
+            k="stores.emptyState"
+            values={{
+              call: <code>createSpyglassReduxMiddleware()</code>,
+              module: <code>spyglass-react/state/redux</code>,
+            }}
+          />
         </p>
       </div>
     );
@@ -54,17 +62,15 @@ export function StoresView({ appId }: { appId: string }) {
       <StoreStatePanel key={activeId} appId={appId} storeId={activeId} entry={active} canWrite={canWrite} />
 
       <section className="store-log">
-        <h3>Actions ({active.log.length})</h3>
+        <h3>{t("stores.actions", { count: active.log.length })}</h3>
         <ul>
           {active.log.map((entry, i) => (
             <li key={i}>
               <code>{entry.action?.type ?? "update"}</code>
-              <span className="diff-count">
-                {entry.diff.length} change{entry.diff.length === 1 ? "" : "s"}
-              </span>
+              <span className="diff-count">{tp("stores.changeCount", entry.diff.length)}</span>
             </li>
           ))}
-          {active.log.length === 0 && <li className="muted">No actions yet.</li>}
+          {active.log.length === 0 && <li className="muted">{t("stores.noActionsYet")}</li>}
         </ul>
       </section>
     </div>
@@ -82,6 +88,7 @@ function StoreStatePanel({
   entry: StoreEntry;
   canWrite: boolean;
 }) {
+  const { t } = useT();
   const sendStateWrite = useConnectionStore((s) => s.sendStateWrite);
   const pendingStateWrites = useConnectionStore((s) => s.data[appId]?.pendingStateWrites);
   const [editedPathKey, setEditedPathKey] = useState<string | null>(null);
@@ -119,14 +126,10 @@ function StoreStatePanel({
   return (
     <section className={`store-state ${isEditable ? "live-edit-accent" : ""}`}>
       <div className="store-state-head">
-        <h3>State</h3>
-        <CopyButton size="sm" title="Copy state" text={() => JSON.stringify(entry.state, null, 2)} />
+        <h3>{t("stores.state")}</h3>
+        <CopyButton size="sm" title={t("stores.copyState")} text={() => JSON.stringify(entry.state, null, 2)} />
       </div>
-      {isEditable && (
-        <LiveEditBanner noticeId="stores-edit">
-          Editar um campo aqui grava imediatamente no store do app conectado (merge raso, não substitui o store inteiro).
-        </LiveEditBanner>
-      )}
+      {isEditable && <LiveEditBanner noticeId="stores-edit">{t("stores.editBanner")}</LiveEditBanner>}
       <JsonGraph data={entry.state} defaultExpandDepth={2} editable={editable} />
     </section>
   );

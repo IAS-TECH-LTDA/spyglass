@@ -6,11 +6,15 @@ import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { toCurl } from "../../lib/curl";
 import { correlateNetworkEntry } from "../../lib/correlateNetworkEntry";
 import { useResizableWidth } from "../../lib/useResizableWidth";
+import { useT } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
+import { currentBcp47 } from "../../state/locale";
 
 /** Preferred display order for the most common verbs; anything else is appended alphabetically. */
 const METHOD_ORDER = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 
 export function NetworkView({ appId }: { appId: string }) {
+  const { t, tp } = useT();
   const requests = useConnectionStore((s) => s.data[appId]?.network ?? []);
   const clearNetwork = useConnectionStore((s) => s.clearNetwork);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -76,7 +80,7 @@ export function NetworkView({ appId }: { appId: string }) {
         <div className="network-toolbar">
           <input
             className="toolbar-search"
-            placeholder="Filter by URL, method or status…"
+            placeholder={t("network.filterPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -95,10 +99,8 @@ export function NetworkView({ appId }: { appId: string }) {
           </nav>
         )}
         <div className="network-list-meta">
-          <span className="network-count">
-            {filtered.length} request{filtered.length === 1 ? "" : "s"}
-          </span>
-          <button className="icon-btn network-clear" title="Clear all requests" aria-label="Clear all requests" onClick={handleClear}>
+          <span className="network-count">{tp("network.requestCount", filtered.length)}</span>
+          <button className="icon-btn network-clear" title={t("network.clearAllAria")} aria-label={t("network.clearAllAria")} onClick={handleClear}>
             <TrashIcon />
           </button>
         </div>
@@ -107,11 +109,14 @@ export function NetworkView({ appId }: { appId: string }) {
           {requests.length === 0 && (
             <div className="view-empty">
               <p>
-                No network activity yet. Attach <code>attachNetwork()</code> from <code>spyglass-react/network</code>.
+                <Trans
+                  k="network.emptyState"
+                  values={{ call: <code>attachNetwork()</code>, module: <code>spyglass-react/network</code> }}
+                />
               </p>
             </div>
           )}
-          {requests.length > 0 && filtered.length === 0 && <div className="list-empty-hint">No matches.</div>}
+          {requests.length > 0 && filtered.length === 0 && <div className="list-empty-hint">{t("network.noMatches")}</div>}
           {filtered.map((entry) => (
             <button
               key={entry.requestId}
@@ -133,7 +138,7 @@ export function NetworkView({ appId }: { appId: string }) {
         onMouseDown={startResize}
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize request list"
+        aria-label={t("network.resizeListAria")}
       />
 
       {/* Keyed by requestId so switching the selected request resets the
@@ -145,6 +150,7 @@ export function NetworkView({ appId }: { appId: string }) {
 }
 
 function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry }) {
+  const { t } = useT();
   const requestBody = parseBody(entry.requestBody);
   const responseBody = parseBody(entry.responseBody);
   const [requestOpen, setRequestOpen] = useState(true);
@@ -171,34 +177,34 @@ function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry })
           {entry.method} {entry.url}
         </h3>
         <div className="network-meta-row">
-          <span>Status</span>
+          <span>{t("network.status")}</span>
           <span className={statusClass(entry)}>{statusLabel(entry)}</span>
         </div>
         <div className="network-meta-row">
-          <span>Method</span>
+          <span>{t("network.method")}</span>
           <span>{entry.method}</span>
         </div>
         {entry.durationMs !== undefined && (
           <div className="network-meta-row">
-            <span>Duration</span>
+            <span>{t("network.duration")}</span>
             <span>{entry.durationMs}ms</span>
           </div>
         )}
         <div className="network-meta-row">
-          <span>Started</span>
+          <span>{t("network.started")}</span>
           <span>{formatTime(entry.startedAt)}</span>
         </div>
         <CopyButton
           className="network-curl-btn"
-          title="Copy as cURL"
+          title={t("network.copyAsCurl")}
           text={() => toCurl({ method: entry.method, url: entry.url, requestHeaders: entry.requestHeaders, requestBody: entry.requestBody })}
         />
-        <span className="network-curl-label">Copy as cURL</span>
+        <span className="network-curl-label">{t("network.copyAsCurl")}</span>
       </div>
 
       {hasRelated && (
         <div className="network-related">
-          <h4>Related</h4>
+          <h4>{t("network.related")}</h4>
           <div className="network-related-chips">
             {related.queries.map((q) => (
               <button
@@ -207,7 +213,7 @@ function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry })
                 className="network-related-chip"
                 onClick={() => highlightAndNavigate({ tab: "queries", queryHash: q.queryHash })}
               >
-                Query: {formatQueryKeyPreview(q.queryKey)}
+                {t("network.relatedQuery", { preview: formatQueryKeyPreview(q.queryKey) })}
               </button>
             ))}
             {related.storage.map((s) => (
@@ -217,7 +223,7 @@ function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry })
                 className="network-related-chip"
                 onClick={() => highlightAndNavigate({ tab: "storage", storageKey: { engine: s.engine, key: s.key } })}
               >
-                Storage: {s.key} ({s.engine})
+                {t("network.relatedStorage", { key: s.key, engine: s.engine })}
               </button>
             ))}
           </div>
@@ -225,7 +231,7 @@ function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry })
       )}
 
       <NetworkSection
-        title="Request"
+        title={t("network.request")}
         open={requestOpen}
         onToggle={() => setRequestOpen((v) => !v)}
         copyText={requestBody !== undefined ? () => JSON.stringify(requestBody, null, 2) : undefined}
@@ -235,7 +241,7 @@ function NetworkDetail({ appId, entry }: { appId: string; entry: NetworkEntry })
       </NetworkSection>
 
       <NetworkSection
-        title="Response"
+        title={t("network.response")}
         open={responseOpen}
         onToggle={() => setResponseOpen((v) => !v)}
         copyText={responseBody !== undefined ? () => JSON.stringify(responseBody, null, 2) : undefined}
@@ -266,12 +272,13 @@ function NetworkSection({
   copyText?: () => string;
   children: React.ReactNode;
 }) {
+  const { t } = useT();
   return (
     <div className="network-section">
       <div className="network-section-head network-section-head-clickable" onClick={onToggle}>
         <span className={`jt-toggle ${open ? "open" : ""}`}>▸</span>
         <h4>{title}</h4>
-        {copyText && <CopyButton size="sm" title={`Copy ${title.toLowerCase()} body`} text={copyText} />}
+        {copyText && <CopyButton size="sm" title={t("network.copyBody", { title: title.toLowerCase() })} text={copyText} />}
       </div>
       {open && <div className="network-section-body">{children}</div>}
     </div>
@@ -308,7 +315,7 @@ function statusLabel(entry: NetworkEntry): string {
 
 /** HH:MM:SS the request started at — same clock-time shown in the list row and the detail panel's "Started" field. */
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour12: false });
+  return new Date(ts).toLocaleTimeString(currentBcp47(), { hour12: false });
 }
 
 /** One-line, human-readable rendering of a query key for the "Related" chips — same format as QueriesView's formatQueryKey. */

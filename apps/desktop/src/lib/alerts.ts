@@ -1,4 +1,5 @@
 import type { AnyEnvelope, LogLevel } from "spyglass-protocol";
+import { t } from "../i18n";
 
 export type AlertKind = "log" | "network";
 
@@ -59,7 +60,7 @@ export function classifyEnvelope(envelope: AnyEnvelope): AlertTrigger | null {
     case "network/response": {
       const payload = envelope.payload;
       if (!isFailedResponse(payload)) return null;
-      const detail = truncate(`${payload.status ?? "failed"} · ${payload.error ?? payload.statusText ?? "request failed"}`);
+      const detail = truncate(`${payload.status ?? "failed"} · ${payload.error ?? payload.statusText ?? t("alerts.requestFailed")}`);
       return { kind: "network", appId: envelope.appId, requestId: payload.requestId, detail };
     }
     default:
@@ -89,9 +90,10 @@ export function formatAlert(
   suppressed: number,
   url?: string,
 ): { title: string; body: string } {
-  const title = trigger.kind === "log" ? `${appName} · ${trigger.level}` : `${appName} · network error`;
+  const title =
+    trigger.kind === "log" ? t("alerts.logTitle", { app: appName, level: trigger.level ?? "" }) : t("alerts.networkTitle", { app: appName });
   const detail = trigger.kind === "network" && url ? `${trigger.detail} · ${url}` : trigger.detail;
-  const body = suppressed > 0 ? `${detail}\n+${suppressed} more since the last alert` : detail;
+  const body = suppressed > 0 ? `${detail}\n${t("alerts.moreSinceLast", { count: suppressed })}` : detail;
   return { title, body };
 }
 

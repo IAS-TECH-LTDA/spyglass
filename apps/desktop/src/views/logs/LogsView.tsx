@@ -3,6 +3,9 @@ import type { LogLevel } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
 import { CopyButton } from "../../components/CopyButton";
 import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
+import { useT } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
+import { currentBcp47 } from "../../state/locale";
 
 const LEVELS: LogLevel[] = ["log", "info", "warn", "error", "debug"];
 
@@ -10,6 +13,7 @@ const LEVELS: LogLevel[] = ["log", "info", "warn", "error", "debug"];
 const LONG_MESSAGE_THRESHOLD = 160;
 
 export function LogsView({ appId }: { appId: string }) {
+  const { t } = useT();
   const logs = useConnectionStore((s) => s.data[appId]?.logs ?? []);
   const clearLogs = useConnectionStore((s) => s.clearLogs);
   const [filter, setFilter] = useState<Set<LogLevel>>(new Set(LEVELS));
@@ -39,7 +43,7 @@ export function LogsView({ appId }: { appId: string }) {
       <div className="logs-toolbar">
         <input
           className="toolbar-search"
-          placeholder="Search logs…"
+          placeholder={t("logs.searchPlaceholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -56,7 +60,7 @@ export function LogsView({ appId }: { appId: string }) {
             </button>
           ))}
         </div>
-        <button className="icon-btn logs-clear" title="Clear all logs" aria-label="Clear all logs" onClick={() => clearLogs(appId)}>
+        <button className="icon-btn logs-clear" title={t("logs.clearAllAria")} aria-label={t("logs.clearAllAria")} onClick={() => clearLogs(appId)}>
           <TrashIcon />
         </button>
       </nav>
@@ -64,11 +68,11 @@ export function LogsView({ appId }: { appId: string }) {
       {logs.length === 0 ? (
         <div className="view-empty">
           <p>
-            No console output yet. Attach <code>attachConsole()</code> from <code>spyglass-react/console</code>.
+            <Trans k="logs.emptyState" values={{ call: <code>attachConsole()</code>, module: <code>spyglass-react/console</code> }} />
           </p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="list-empty-hint">No matches.</div>
+        <div className="list-empty-hint">{t("logs.noMatches")}</div>
       ) : (
         <ul className="log-list">
           {filtered.map((entry, i) => (
@@ -93,6 +97,7 @@ function argToSearchText(arg: unknown): string {
 }
 
 function LogRow({ entry }: { entry: { level: LogLevel; message: string; args: unknown[]; ts: number } }) {
+  const { t } = useT();
   const hasStructuredArgs = entry.args.some((a) => a !== null && typeof a === "object");
   const isLong = entry.message.length > LONG_MESSAGE_THRESHOLD || hasStructuredArgs;
   const [expanded, setExpanded] = useState(false);
@@ -108,10 +113,10 @@ function LogRow({ entry }: { entry: { level: LogLevel; message: string; args: un
     <li className={`log-entry log-level-${entry.level}`}>
       <div className="log-entry-row" onClick={() => isLong && setExpanded((v) => !v)}>
         {isLong && <span className={`jt-toggle log-expand ${expanded ? "open" : ""}`}>▸</span>}
-        <span className="log-time">{new Date(entry.ts).toLocaleTimeString()}</span>
+        <span className="log-time">{new Date(entry.ts).toLocaleTimeString(currentBcp47())}</span>
         <span className="log-badge">{entry.level}</span>
         <span className={`log-message ${isLong && !expanded ? "clamped" : ""}`}>{entry.message}</span>
-        <CopyButton size="sm" className="log-copy" title="Copy log line" text={copyText} />
+        <CopyButton size="sm" className="log-copy" title={t("logs.copyLine")} text={copyText} />
       </div>
       {isLong && expanded && entry.args.length > 0 && (
         <div className="log-args">

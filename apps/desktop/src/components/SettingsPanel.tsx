@@ -2,11 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { appAlertKey } from "../lib/alerts";
 import { useAlertSettings } from "../state/alertSettings";
 import { useConnectionStore } from "../state/connection";
+import { useLocaleStore, type Locale } from "../state/locale";
+import { useT, type TranslationKey } from "../i18n";
 
-const LEVEL_META: Record<"error" | "warn", { label: string; color: string }> = {
-  error: { label: "Error", color: "var(--red)" },
-  warn: { label: "Warn", color: "#facc15" },
+const LEVEL_META: Record<"error" | "warn", { labelKey: TranslationKey; color: string }> = {
+  error: { labelKey: "settings.level.error", color: "var(--red)" },
+  warn: { labelKey: "settings.level.warn", color: "#facc15" },
 };
+
+const LANGUAGES: Array<{ id: Locale; labelKey: TranslationKey }> = [
+  { id: "en", labelKey: "settings.language.english" },
+  { id: "pt", labelKey: "settings.language.portuguese" },
+];
 
 interface AppRow {
   key: string;
@@ -14,10 +21,20 @@ interface AppRow {
   platform?: string;
 }
 
-/** Gear popover in the topbar — settings for the alerts feature (sound/native notification/badge). */
-export function AlertSettingsPanel() {
+/**
+ * Gear popover in the topbar — settings for the whole app. Started out as
+ * just the alerts feature's settings (hence the file used to be named
+ * `AlertSettingsPanel`); the language picker (spec 0012) made it the app's
+ * one general Settings entry point, so it was renamed and Language became
+ * its first section.
+ */
+export function SettingsPanel() {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
+
+  const locale = useLocaleStore((s) => s.locale);
+  const setLocale = useLocaleStore((s) => s.setLocale);
 
   const muted = useAlertSettings((s) => s.muted);
   const levels = useAlertSettings((s) => s.levels);
@@ -64,13 +81,30 @@ export function AlertSettingsPanel() {
 
   return (
     <div className="alerts-anchor" ref={anchorRef}>
-      <button type="button" className="icon-btn" title="Alert settings" aria-label="Alert settings" onClick={() => setOpen((v) => !v)}>
+      <button type="button" className="icon-btn" title={t("settings.title")} aria-label={t("settings.title")} onClick={() => setOpen((v) => !v)}>
         <GearIcon />
       </button>
       {open && (
         <div className="alerts-popover">
           <div className="alerts-popover-section">
-            <span>Alerts</span>
+            <span>{t("settings.language")}</span>
+            <div className="alerts-chip-row">
+              {LANGUAGES.map((lang) => (
+                <button
+                  key={lang.id}
+                  type="button"
+                  className={`storage-chip ${locale === lang.id ? "active" : ""}`}
+                  style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
+                  onClick={() => setLocale(lang.id)}
+                >
+                  {t(lang.labelKey)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="alerts-popover-section">
+            <span>{t("settings.alerts")}</span>
             <div className="alerts-chip-row">
               <button
                 type="button"
@@ -78,13 +112,13 @@ export function AlertSettingsPanel() {
                 style={{ "--chip-color": muted ? "var(--red)" : "var(--green)" } as React.CSSProperties}
                 onClick={() => setMuted(!muted)}
               >
-                {muted ? "Muted" : "Alerts on"}
+                {muted ? t("settings.alerts.muted") : t("settings.alerts.on")}
               </button>
             </div>
           </div>
 
           <div className="alerts-popover-section">
-            <span>Trigger on</span>
+            <span>{t("settings.triggerOn")}</span>
             <div className="alerts-chip-row">
               {(["error", "warn"] as const).map((level) => (
                 <button
@@ -94,7 +128,7 @@ export function AlertSettingsPanel() {
                   style={{ "--chip-color": LEVEL_META[level].color } as React.CSSProperties}
                   onClick={() => toggleLevel(level)}
                 >
-                  {LEVEL_META[level].label}
+                  {t(LEVEL_META[level].labelKey)}
                 </button>
               ))}
               <button
@@ -103,13 +137,13 @@ export function AlertSettingsPanel() {
                 style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
                 onClick={() => setNetwork(!network)}
               >
-                Network failures
+                {t("settings.networkFailures")}
               </button>
             </div>
           </div>
 
           <div className="alerts-popover-section">
-            <span>Notify me with</span>
+            <span>{t("settings.notifyWith")}</span>
             <div className="alerts-chip-row">
               <button
                 type="button"
@@ -117,7 +151,7 @@ export function AlertSettingsPanel() {
                 style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
                 onClick={() => setSound(!sound)}
               >
-                Sound
+                {t("settings.sound")}
               </button>
               <button
                 type="button"
@@ -125,22 +159,22 @@ export function AlertSettingsPanel() {
                 style={{ "--chip-color": "var(--accent)" } as React.CSSProperties}
                 onClick={() => setNativeNotification(!nativeNotification)}
               >
-                macOS notification
+                {t("settings.macNotification")}
               </button>
             </div>
             {notificationPermission === "denied" && (
               <p className="empty-hint">
-                Blocked in System Settings › Notifications › Spyglass.{" "}
+                {t("settings.notificationBlocked")}{" "}
                 <button type="button" className="icon-btn alerts-retry-btn" onClick={() => resetNotificationPermission()}>
-                  Try again
+                  {t("settings.tryAgain")}
                 </button>
               </p>
             )}
           </div>
 
           <div className="alerts-popover-section">
-            <span>Apps</span>
-            {rows.length === 0 && <p className="empty-hint">No apps connected yet.</p>}
+            <span>{t("settings.apps")}</span>
+            {rows.length === 0 && <p className="empty-hint">{t("settings.noAppsYet")}</p>}
             {rows.map((row) => (
               <div key={row.key} className="alerts-app-row">
                 <span>
@@ -152,7 +186,7 @@ export function AlertSettingsPanel() {
                   style={{ "--chip-color": mutedApps[row.key] ? "var(--red)" : "var(--green)" } as React.CSSProperties}
                   onClick={() => toggleAppMute(row.key)}
                 >
-                  {mutedApps[row.key] ? "Muted" : "Alerts on"}
+                  {mutedApps[row.key] ? t("settings.alerts.muted") : t("settings.alerts.on")}
                 </button>
               </div>
             ))}

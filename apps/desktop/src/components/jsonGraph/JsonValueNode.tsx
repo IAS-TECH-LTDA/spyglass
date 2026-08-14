@@ -1,5 +1,6 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { JsonGraphEditable, JsonGraphNode, JsonRow } from "./buildJsonGraph";
+import { t } from "../../i18n";
 
 export interface JsonValueNodeProps {
   data: JsonGraphNode;
@@ -137,7 +138,7 @@ function JsonRowView({
     return (
       <RowTag className={rowClass} onClick={onSelectRow ? () => onSelectRow(nodeId, row) : undefined}>
         <span className="jgn-key">{row.key}:</span>
-        <span className="jgn-null">[Circular]</span>
+        <span className="jgn-null">{t("jsonTree.circular")}</span>
       </RowTag>
     );
   }
@@ -155,7 +156,7 @@ function JsonRowView({
   return (
     <RowTag
       className={rowClass}
-      title={status === "failed" ? "Failed to apply — see the inspector column for details" : undefined}
+      title={status === "failed" ? t("jsonValueNode.failedToApply") : undefined}
       onClick={onSelectRow ? () => onSelectRow(nodeId, row) : undefined}
     >
       <span className="jgn-key">{row.key}:</span>

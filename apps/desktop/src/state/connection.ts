@@ -16,6 +16,7 @@ import type {
 } from "spyglass-protocol";
 import type { AppInfo } from "../ipc";
 import { sendToApp } from "../ipc";
+import { t } from "../i18n";
 
 export type Tab = "graph" | "stores" | "storage" | "queries" | "logs" | "network" | "performance";
 
@@ -545,11 +546,11 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
             ...s.data,
             [appId]: {
               ...appData,
-              pendingWrites: failAllPending(appData.pendingWrites, "App disconnected"),
-              pendingStateWrites: failAllPending(appData.pendingStateWrites, "App disconnected"),
-              pendingCacheClears: failAllPending(appData.pendingCacheClears, "App disconnected"),
-              pendingQueryWrites: failAllPending(appData.pendingQueryWrites, "App disconnected"),
-              pendingQueryCommands: failAllPending(appData.pendingQueryCommands, "App disconnected"),
+              pendingWrites: failAllPending(appData.pendingWrites, t("connection.appDisconnected")),
+              pendingStateWrites: failAllPending(appData.pendingStateWrites, t("connection.appDisconnected")),
+              pendingCacheClears: failAllPending(appData.pendingCacheClears, t("connection.appDisconnected")),
+              pendingQueryWrites: failAllPending(appData.pendingQueryWrites, t("connection.appDisconnected")),
+              pendingQueryCommands: failAllPending(appData.pendingQueryCommands, t("connection.appDisconnected")),
             },
           }
         : s.data;
@@ -734,7 +735,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     // app data. Caught here (post-optimistic-pending-entry, pre-send) so the
     // UI still shows a "failed" row instead of silently doing nothing.
     if (op === "set" && containsTruncatedValue(value)) {
-      fail("This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.");
+      fail(t("connection.truncatedValue"));
       return;
     }
 
@@ -742,7 +743,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     sendToApp(envelope)
       .then(() => {
         const timer = setTimeout(
-          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          () => fail(t("connection.noResponse")),
           STORAGE_WRITE_TIMEOUT_MS,
         );
         (timer as unknown as { unref?: () => void }).unref?.();
@@ -780,7 +781,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
     // See the matching guard in sendStorageWrite above — same reasoning.
     if (containsTruncatedValue(state)) {
-      fail("This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.");
+      fail(t("connection.truncatedValue"));
       return;
     }
 
@@ -788,7 +789,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     sendToApp(envelope)
       .then(() => {
         const timer = setTimeout(
-          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          () => fail(t("connection.noResponse")),
           STORAGE_WRITE_TIMEOUT_MS,
         );
         (timer as unknown as { unref?: () => void }).unref?.();
@@ -830,7 +831,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     sendToApp(envelope)
       .then(() => {
         const timer = setTimeout(
-          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          () => fail(t("connection.noResponse")),
           STORAGE_WRITE_TIMEOUT_MS,
         );
         (timer as unknown as { unref?: () => void }).unref?.();
@@ -868,7 +869,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
 
     // See the matching guard in sendStorageWrite/sendStateWrite — same reasoning.
     if (containsTruncatedValue(data)) {
-      fail("This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.");
+      fail(t("connection.truncatedValue"));
       return;
     }
 
@@ -876,7 +877,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     sendToApp(envelope)
       .then(() => {
         const timer = setTimeout(
-          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          () => fail(t("connection.noResponse")),
           STORAGE_WRITE_TIMEOUT_MS,
         );
         (timer as unknown as { unref?: () => void }).unref?.();
@@ -920,7 +921,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     sendToApp(envelope)
       .then(() => {
         const timer = setTimeout(
-          () => fail("No response from the app (3s). It may have disconnected, or writes are disabled in this build (production)."),
+          () => fail(t("connection.noResponse")),
           STORAGE_WRITE_TIMEOUT_MS,
         );
         (timer as unknown as { unref?: () => void }).unref?.();

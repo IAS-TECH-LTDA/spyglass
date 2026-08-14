@@ -6,12 +6,15 @@ import { JsonGraph, type JsonGraphEditable } from "../../components/jsonGraph/Js
 import { CopyButton } from "../../components/CopyButton";
 import { LiveEditBanner } from "../../components/LiveEditBanner";
 import { toJsonPointer } from "../../lib/jsonPointer";
+import { useT, type TranslationKey } from "../../i18n";
+import { Trans } from "../../i18n/Trans";
+import { currentBcp47 } from "../../state/locale";
 
-const COMMANDS: Array<{ kind: QueryCommandKind; label: string }> = [
-  { kind: "refetch", label: "Refetch" },
-  { kind: "invalidate", label: "Invalidate" },
-  { kind: "reset", label: "Reset" },
-  { kind: "remove", label: "Remove" },
+const COMMANDS: Array<{ kind: QueryCommandKind; labelKey: TranslationKey }> = [
+  { kind: "refetch", labelKey: "queries.command.refetch" },
+  { kind: "invalidate", labelKey: "queries.command.invalidate" },
+  { kind: "reset", labelKey: "queries.command.reset" },
+  { kind: "remove", labelKey: "queries.command.remove" },
 ];
 
 export function QueriesView({ appId }: { appId: string }) {
@@ -41,8 +44,13 @@ export function QueriesView({ appId }: { appId: string }) {
     return (
       <div className="view-empty">
         <p>
-          No query cache connected yet. Attach <code>attachReactQuery(queryClient)</code> from{" "}
-          <code>spyglass-react/query/react-query</code>.
+          <Trans
+            k="queries.emptyState"
+            values={{
+              call: <code>attachReactQuery(queryClient)</code>,
+              module: <code>spyglass-react/query/react-query</code>,
+            }}
+          />
         </p>
       </div>
     );
@@ -72,6 +80,7 @@ export function QueriesView({ appId }: { appId: string }) {
 }
 
 function QueryDetail({ appId, query }: { appId: string; query: QueryInfo }) {
+  const { t } = useT();
   const canWrite = useConnectionStore((s) => s.apps[appId]?.capabilities.includes("query:write") ?? false);
   const sendQueryWrite = useConnectionStore((s) => s.sendQueryWrite);
   const pendingQueryWrites = useConnectionStore((s) => s.data[appId]?.pendingQueryWrites);
@@ -106,54 +115,54 @@ function QueryDetail({ appId, query }: { appId: string; query: QueryInfo }) {
         <h3>{formatQueryKey(query.queryKey)}</h3>
 
         <div className="query-meta-row">
-          <span>Status</span>
+          <span>{t("queries.status")}</span>
           <span className={statusClass(query)}>{query.status}</span>
         </div>
         <div className="query-meta-row">
-          <span>Fetch status</span>
+          <span>{t("queries.fetchStatus")}</span>
           <span className={`fetch-status fetch-status-${query.fetchStatus}`}>{query.fetchStatus}</span>
         </div>
         <div className="query-meta-row">
-          <span>Observers</span>
+          <span>{t("queries.observers")}</span>
           <span>{query.observersCount}</span>
         </div>
         <div className="query-meta-row">
-          <span>Data updated</span>
-          <span>{query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toLocaleTimeString() : "—"}</span>
+          <span>{t("queries.dataUpdated")}</span>
+          <span>{query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toLocaleTimeString(currentBcp47()) : "—"}</span>
         </div>
         {query.isInvalidated && (
           <div className="query-meta-row">
-            <span>Invalidated</span>
-            <span>yes — refetch pending</span>
+            <span>{t("queries.invalidated")}</span>
+            <span>{t("queries.invalidatedYes")}</span>
           </div>
         )}
 
-        <CopyButton title="Copy query key" text={() => JSON.stringify(query.queryKey, null, 2)} />
+        <CopyButton title={t("queries.copyQueryKey")} text={() => JSON.stringify(query.queryKey, null, 2)} />
 
         {canWrite && (
           <QueryActionsToolbar appId={appId} queryHash={query.queryHash} observersCount={query.observersCount} />
         )}
       </div>
 
-      {canWrite && <LiveEditBanner noticeId="queries-edit">Editar os dados aqui, ou usar Refetch/Invalidate/Reset/Remove, afeta imediatamente o cache do React Query no app conectado.</LiveEditBanner>}
+      {canWrite && <LiveEditBanner noticeId="queries-edit">{t("queries.editBanner")}</LiveEditBanner>}
 
       <div className={`query-section ${canWrite ? "live-edit-accent" : ""}`}>
         <div className="query-section-head">
-          <h4>Data</h4>
+          <h4>{t("queries.data")}</h4>
           {query.data !== undefined && (
-            <CopyButton size="sm" title="Copy data" text={() => JSON.stringify(query.data, null, 2)} />
+            <CopyButton size="sm" title={t("queries.copyData")} text={() => JSON.stringify(query.data, null, 2)} />
           )}
         </div>
         {query.data !== undefined ? (
           <JsonGraph data={query.data} defaultExpandDepth={2} editable={editable} />
         ) : (
-          <div className="view-empty">No data yet.</div>
+          <div className="view-empty">{t("queries.noDataYet")}</div>
         )}
       </div>
 
       {query.error !== undefined && (
         <div className="query-section">
-          <h4>Error</h4>
+          <h4>{t("queries.error")}</h4>
           <JsonGraph data={query.error} defaultExpandDepth={2} />
         </div>
       )}
@@ -171,6 +180,7 @@ function QueryDetail({ appId, query }: { appId: string; query: QueryInfo }) {
  * commands race against the same query.
  */
 function QueryActionsToolbar({ appId, queryHash, observersCount }: { appId: string; queryHash: string; observersCount: number }) {
+  const { t } = useT();
   const sendQueryCommand = useConnectionStore((s) => s.sendQueryCommand);
   const pendingQueryCommands = useConnectionStore((s) => s.data[appId]?.pendingQueryCommands);
 
@@ -188,20 +198,16 @@ function QueryActionsToolbar({ appId, queryHash, observersCount }: { appId: stri
 
   return (
     <div className="query-actions">
-      {COMMANDS.map(({ kind, label }) => (
+      {COMMANDS.map(({ kind, labelKey }) => (
         <button
           key={kind}
           type="button"
           className={`query-action-btn ${kind === "remove" ? "query-action-btn-remove" : ""}`}
           disabled={disabled}
-          title={
-            kind === "remove" && observersCount > 0
-              ? `This query has ${observersCount} active observer(s) — it may reappear immediately via their automatic refetch.`
-              : undefined
-          }
+          title={kind === "remove" && observersCount > 0 ? t("queries.removeObserversTooltip", { count: observersCount }) : undefined}
           onClick={() => sendQueryCommand(appId, queryHash, kind)}
         >
-          {label}
+          {t(labelKey)}
         </button>
       ))}
       {latest?.status && <span className={`jgn-status-dot jgn-status-dot-${latest.status}`} title={latest.error ?? latest.status} />}

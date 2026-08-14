@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n";
 
 export interface CopyButtonProps {
   /** Text to copy, or a lazy getter — useful when building the string (e.g. cURL) is only worth doing on click. */
@@ -14,6 +15,7 @@ type Status = "idle" | "copied" | "failed";
 const RESET_DELAY_MS = 1200;
 
 export function CopyButton({ text, title, size = "md", className = "" }: CopyButtonProps) {
+  const { t } = useT();
   const [status, setStatus] = useState<Status>("idle");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -46,8 +48,8 @@ export function CopyButton({ text, title, size = "md", className = "" }: CopyBut
     <button
       type="button"
       className={`icon-btn copy-btn copy-btn-${size} ${status === "copied" ? "copied" : ""} ${className}`}
-      title={status === "failed" ? "Copy failed" : (title ?? "Copy")}
-      aria-label={title ?? "Copy"}
+      title={status === "failed" ? t("common.copyFailed") : (title ?? t("common.copy"))}
+      aria-label={title ?? t("common.copy")}
       onClick={handleClick}
     >
       {status === "copied" ? (

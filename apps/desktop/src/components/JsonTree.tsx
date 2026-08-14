@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { t, tp } from "../i18n";
 
 export interface JsonTreeProps {
   data: unknown;
@@ -56,14 +57,12 @@ function ContainerNode({ name, value, depth, defaultExpandDepth, ancestors }: No
     return (
       <div className="jt-row">
         {name !== undefined && <span className="jt-key">{name}:</span>}
-        <span className="jt-null">[Circular]</span>
+        <span className="jt-null">{t("jsonTree.circular")}</span>
       </div>
     );
   }
 
-  const summary = isArray
-    ? `[…] ${entries.length} item${entries.length === 1 ? "" : "s"}`
-    : `{…} ${entries.length} key${entries.length === 1 ? "" : "s"}`;
+  const summary = isArray ? tp("jsonGraph.itemCount", entries.length) : tp("jsonGraph.keyCount", entries.length);
   const childAncestors = [...ancestors, value];
 
   return (
@@ -107,7 +106,7 @@ function PrimitiveValue({ value }: { value: unknown }) {
     return <span className="jt-boolean">{String(value)}</span>;
   }
   if (typeof value === "function") {
-    return <span className="jt-null">ƒ {value.name || "anonymous"}()</span>;
+    return <span className="jt-null">ƒ {value.name || t("jsonTree.anonymous")}()</span>;
   }
   if (typeof value === "symbol") {
     return <span className="jt-null">{value.toString()}</span>;
@@ -134,7 +133,7 @@ function TruncatedString({ value }: { value: string }) {
             setExpanded((v) => !v);
           }}
         >
-          {expanded ? " less" : " more"}
+          {expanded ? t("jsonTree.less") : t("jsonTree.more")}
         </span>
       )}
     </span>

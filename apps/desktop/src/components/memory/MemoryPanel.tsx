@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConnectionStore } from "../../state/connection";
 import type { PendingCacheClear } from "../../state/connection";
+import { useT } from "../../i18n";
 import { LiveEditBanner } from "../LiveEditBanner";
 import {
   findSimulatorPid,
@@ -49,20 +50,19 @@ function formatMb(mb: number | undefined): string {
 }
 
 export function MemoryPanel({ appId }: { appId: string }) {
+  const { t } = useT();
   const platform = useConnectionStore((s) => s.apps[appId]?.platform);
 
   return (
     <div className="memory-panel">
       <div className="memory-panel-head">
-        <h3>Memory</h3>
+        <h3>{t("memory.title")}</h3>
         <ClearCachesButton appId={appId} />
       </div>
 
       {platform === "android" && <AndroidMemoryPanel appId={appId} />}
       {platform === "ios" && <IosMemoryPanel appId={appId} />}
-      {platform !== "android" && platform !== "ios" && (
-        <p className="muted">Memory monitoring isn't available for this platform yet.</p>
-      )}
+      {platform !== "android" && platform !== "ios" && <p className="muted">{t("memory.notAvailable")}</p>}
     </div>
   );
 }
@@ -74,6 +74,7 @@ export function MemoryPanel({ appId }: { appId: string }) {
  * `StorageView`'s `canWrite` gate.
  */
 function ClearCachesButton({ appId }: { appId: string }) {
+  const { t } = useT();
   const canClear = useConnectionStore((s) => s.apps[appId]?.capabilities.includes("memory:clear-cache") ?? false);
   const sendClearCache = useConnectionStore((s) => s.sendClearCache);
   const pendingCacheClears = useConnectionStore((s) => s.data[appId]?.pendingCacheClears);
@@ -91,18 +92,16 @@ function ClearCachesButton({ appId }: { appId: string }) {
 
   return (
     <div className="memory-clear-caches-wrap">
-      <LiveEditBanner noticeId="memory-clear-cache">
-        "Clear app caches" roda o coletor de lixo e limpa caches de imagem no app conectado agora.
-      </LiveEditBanner>
+      <LiveEditBanner noticeId="memory-clear-cache">{t("memory.clearCaches.notice")}</LiveEditBanner>
       <div className="memory-clear-caches live-edit-accent">
         <button
           type="button"
           className="memory-clear-caches-btn"
-          title="Runs the JS engine's garbage collector and, if the app uses expo-image, clears its image cache. Can't free memory system-wide — no third-party app can ask the OS for that."
+          title={t("memory.clearCaches.tooltip")}
           disabled={latest?.status === "pending"}
           onClick={() => sendClearCache(appId)}
         >
-          Clear app caches
+          {t("memory.clearCaches.button")}
         </button>
         {latest?.status && <span className={`jgn-status-dot jgn-status-dot-${latest.status}`} title={latest.error ?? latest.status} />}
       </div>
@@ -111,6 +110,7 @@ function ClearCachesButton({ appId }: { appId: string }) {
 }
 
 function AndroidMemoryPanel({ appId }: { appId: string }) {
+  const { t } = useT();
   const serialKey = `dm:memory-android-serial:${appId}`;
   const packageKey = `dm:memory-android-package:${appId}`;
 
@@ -197,10 +197,10 @@ function AndroidMemoryPanel({ appId }: { appId: string }) {
     <>
       <div className="memory-picker">
         <label>
-          Device
+          {t("memory.device")}
           <select value={serial ?? ""} onChange={(e) => setSerial(e.target.value || null)}>
             <option value="" disabled>
-              Select a device…
+              {t("memory.selectDevice")}
             </option>
             {devices.map((d) => (
               <option key={d.serial} value={d.serial}>
@@ -212,10 +212,10 @@ function AndroidMemoryPanel({ appId }: { appId: string }) {
 
         {serial && (
           <label>
-            Package
+            {t("memory.package")}
             <select value={packageName ?? ""} onChange={(e) => setPackageName(e.target.value || null)}>
               <option value="" disabled>
-                Select a package…
+                {t("memory.selectPackage")}
               </option>
               {packages.map((p) => (
                 <option key={p} value={p}>
@@ -228,7 +228,7 @@ function AndroidMemoryPanel({ appId }: { appId: string }) {
 
         {suggestion && suggestion.package !== packageName && (
           <button type="button" className="memory-suggestion" onClick={() => setPackageName(suggestion.package)}>
-            Use suggested: {suggestion.package}
+            {t("memory.useSuggested", { package: suggestion.package })}
           </button>
         )}
       </div>
@@ -238,10 +238,10 @@ function AndroidMemoryPanel({ appId }: { appId: string }) {
       {systemMemory && appMemory && (
         <>
           <div className="memory-readouts">
-            <MemoryReadout label="Device total" value={formatMb(kbToMb(systemMemory.totalKb))} />
-            <MemoryReadout label="Device available" value={formatMb(kbToMb(systemMemory.availableKb))} />
-            <MemoryReadout label="App (physical)" value={formatMb(kbToMb(appMemory.totalRssKb))} />
-            <MemoryReadout label="App swap" value={formatMb(kbToMb(appMemory.totalSwapPssKb))} />
+            <MemoryReadout label={t("memory.deviceTotal")} value={formatMb(kbToMb(systemMemory.totalKb))} />
+            <MemoryReadout label={t("memory.deviceAvailable")} value={formatMb(kbToMb(systemMemory.availableKb))} />
+            <MemoryReadout label={t("memory.appPhysical")} value={formatMb(kbToMb(appMemory.totalRssKb))} />
+            <MemoryReadout label={t("memory.appSwap")} value={formatMb(kbToMb(appMemory.totalSwapPssKb))} />
           </div>
           {history.length > 1 && <MemoryChart points={history} />}
         </>
@@ -251,6 +251,7 @@ function AndroidMemoryPanel({ appId }: { appId: string }) {
 }
 
 function IosMemoryPanel({ appId }: { appId: string }) {
+  const { t } = useT();
   const udidKey = `dm:memory-ios-udid:${appId}`;
   const nameKey = `dm:memory-ios-name:${appId}`;
 
@@ -268,7 +269,7 @@ function IosMemoryPanel({ appId }: { appId: string }) {
     // else, which is expected, not a real error to alarm the user over.
     listBootedSimulators()
       .then(setSimulators)
-      .catch(() => setSimulatorsError("Simulator memory needs the desktop app running on macOS."));
+      .catch(() => setSimulatorsError(t("memory.simulatorMacOnly")));
   }, []);
 
   useEffect(() => {
@@ -329,10 +330,10 @@ function IosMemoryPanel({ appId }: { appId: string }) {
     <>
       <div className="memory-picker">
         <label>
-          Simulator
+          {t("memory.simulator")}
           <select value={udid ?? ""} onChange={(e) => setUdid(e.target.value || null)}>
             <option value="" disabled>
-              Select a booted Simulator…
+              {t("memory.selectSimulator")}
             </option>
             {simulators.map((s) => (
               <option key={s.udid} value={s.udid}>
@@ -343,29 +344,27 @@ function IosMemoryPanel({ appId }: { appId: string }) {
         </label>
         {udid && (
           <label>
-            App bundle name (e.g. "MyApp" for MyApp.app)
+            {t("memory.appBundleLabel")}
             <input type="text" value={bundleOrName} onChange={(e) => setBundleOrName(e.target.value)} placeholder="MyApp" />
           </label>
         )}
       </div>
 
       {simulatorsError && <p className="muted">{simulatorsError}</p>}
-      {!simulatorsError && simulators.length === 0 && <p className="muted">No booted Simulator found.</p>}
+      {!simulatorsError && simulators.length === 0 && <p className="muted">{t("memory.noSimulator")}</p>}
       {error && <p className="memory-error">{error}</p>}
-      {udid && bundleOrName && !pid && !error && <p className="muted">Waiting for the app to appear in this Simulator…</p>}
+      {udid && bundleOrName && !pid && !error && <p className="muted">{t("memory.waitingForSimApp")}</p>}
 
       {memory && (
         <>
           <div className="memory-readouts">
-            <MemoryReadout label="App (phys_footprint)" value={formatMb(memory.physFootprintMb)} />
+            <MemoryReadout label={t("memory.appPhysFootprint")} value={formatMb(memory.physFootprintMb)} />
           </div>
           {history.length > 1 && <MemoryChart points={history} />}
         </>
       )}
 
-      <p className="memory-physical-note">
-        Running on a physical iPhone/iPad? Not supported yet — see spec 0008 for why (no lightweight public API exists).
-      </p>
+      <p className="memory-physical-note">{t("memory.physicalNote")}</p>
     </>
   );
 }

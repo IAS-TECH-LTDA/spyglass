@@ -1,3 +1,5 @@
+import { t, tp } from "../../i18n";
+
 /**
  * Pure derivation of a JSON value into a graph of nodes/edges for
  * `JsonGraph.tsx` to render with `@xyflow/react`. No import of
@@ -101,9 +103,8 @@ function isPrimitiveIsh(value: unknown): boolean {
 }
 
 function describeContainer(value: object): string {
-  if (Array.isArray(value)) return `[…] ${value.length} item${value.length === 1 ? "" : "s"}`;
-  const n = Object.keys(value).length;
-  return `{…} ${n} key${n === 1 ? "" : "s"}`;
+  if (Array.isArray(value)) return tp("jsonGraph.itemCount", value.length);
+  return tp("jsonGraph.keyCount", Object.keys(value).length);
 }
 
 function labelFor(path: JsonPathSegment[], rootLabel?: string): string {
@@ -213,7 +214,7 @@ export function buildJsonGraph(data: unknown, options: BuildJsonGraphOptions = {
         path: item.path,
         kind: "overflow",
         childNodeId: item.id,
-        summary: `+${rawEntries.length - visibleCount} more`,
+        summary: t("common.moreCount", { count: rawEntries.length - visibleCount }),
       });
     }
 
