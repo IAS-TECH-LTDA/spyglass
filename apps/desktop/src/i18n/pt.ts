@@ -170,6 +170,9 @@ export const pt = {
   "storage.noRows": "Nenhuma linha.",
   "storage.resizeDetailAria": "Redimensionar painel de detalhes",
   "storage.goToAria": "Ir para {table}.id = {id}",
+  "storage.location.label": "Caminho",
+  "storage.location.copyAria": "Copiar caminho",
+  "storage.location.configuredNote": "informado pelo app, não lido do engine",
 
   // ---------------------------------------------------------------------
   // graph (views/graph/GraphView.tsx)

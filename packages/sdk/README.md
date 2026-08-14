@@ -207,6 +207,30 @@ Every library above is an optional peer dependency — the SDK reaches them via
 dynamic `import()` or a value you pass in, never a static import, so you
 never need to install adapters you don't use.
 
+### Reporting the backing file's path
+
+Useful on mobile, where "where is the actual database file" is otherwise a
+manual `adb`/Simulator-container hunt. Two storage adapters can read it
+straight from the engine, no configuration needed:
+
+- `attachSqlite` — reads it via `PRAGMA database_list` on the `SqliteQueryRunner` you already pass in, once at attach time.
+- `attachRealm` — reads it via `realm.path`.
+
+The desktop shows these with a **"set by the app, not read from the
+engine"** distinction it can't make on its own — a wrong path would be worse
+than none, so it's only ever shown once an adapter actually vouches for it.
+The other engines have no way to discover their own file path from their own
+API, so instead take an explicit `path` option:
+
+```ts
+attachAsyncStorage(AsyncStorage, { path: "/data/data/com.myapp/..." });
+attachMmkv(storage, { path: "/data/user/0/com.myapp/files/mmkv/default" });
+attachWatermelonDB(database, { path: "/data/data/com.myapp/databases/app.db" });
+```
+
+Omit `path` and the desktop simply doesn't show a path for that engine —
+never a guess.
+
 ## Live editing from the desktop
 
 Things the desktop app can do to your *running* app, not just read from it

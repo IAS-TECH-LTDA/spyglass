@@ -1,5 +1,5 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
-import type { StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
+import type { StorageLocation, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /**
@@ -44,8 +44,31 @@ export function attachSqlite(runner: SqliteQueryRunner, options: SqliteAdapterOp
   const maxRowsPerTable = options.maxRowsPerTable ?? 500;
 
   let lastSnapshotJson = "";
+  // Resolved once (spec 0013) — the backing file doesn't move while the
+  // connection is open, so there's no reason to re-run PRAGMA database_list
+  // on every poll tick. `undefined` after the first attempt means it
+  // genuinely failed (a driver that doesn't support PRAGMA), not "not tried
+  // yet" — `locationResolved` is what distinguishes the two.
+  let location: StorageLocation | undefined;
+  let locationResolved = false;
+
+  const resolveLocation = async (): Promise<void> => {
+    if (locationResolved) return;
+    locationResolved = true;
+    try {
+      const rows = await runner.query<{ seq: number; name: string; file: string }>("PRAGMA database_list");
+      const main = rows.find((r) => r.name === "main") ?? rows[0];
+      if (main?.file) location = { path: main.file, source: "exact" };
+    } catch {
+      // Driver doesn't support PRAGMA (or the query failed for some other
+      // reason) — `location` stays undefined, the desktop just won't show a
+      // path rather than a wrong one.
+    }
+  };
 
   const snapshot = async (): Promise<void> => {
+    await resolveLocation();
+
     const tables = await runner.query<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
     );
@@ -69,7 +92,7 @@ export function attachSqlite(runner: SqliteQueryRunner, options: SqliteAdapterOp
     if (json === lastSnapshotJson) return;
     lastSnapshotJson = json;
 
-    const payload: StorageSnapshotPayload = { engine: "sqlite", dbName, schema, rows: serializedRows };
+    const payload: StorageSnapshotPayload = { engine: "sqlite", dbName, schema, rows: serializedRows, location };
     core.transport.send(createEnvelope("storage/snapshot", core.appId, payload));
   };
 

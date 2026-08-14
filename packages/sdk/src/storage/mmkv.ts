@@ -1,5 +1,5 @@
 import { createEnvelope } from "spyglass-protocol";
-import type { KVEntry, StorageChangePayload, StorageSnapshotPayload } from "spyglass-protocol";
+import type { KVEntry, StorageChangePayload, StorageLocation, StorageSnapshotPayload } from "spyglass-protocol";
 import { registerStorageWriteHandler } from "../commands.js";
 import { getCore } from "../core.js";
 import { parseMaybeJson } from "./shared.js";
@@ -18,6 +18,14 @@ interface MMKVLike {
 
 export interface MmkvAdapterOptions {
   dbName?: string;
+  /**
+   * Absolute path to the MMKV instance's backing file (spec 0013) — the
+   * structural `MMKVLike` type above doesn't declare `path`/`rootDirectory`
+   * (real `MMKV` instances have them, but reading them back here would tie
+   * this adapter to that exact class shape). Pass the same `path` you gave
+   * `new MMKV({ path })` if you set one; reported as `source: "configured"`.
+   */
+  path?: string;
 }
 
 /**
@@ -47,9 +55,11 @@ export function attachMmkv(instance: MMKVLike, options: MmkvAdapterOptions = {})
     return undefined;
   };
 
+  const location: StorageLocation | undefined = options.path ? { path: options.path, source: "configured" } : undefined;
+
   const sendSnapshot = (): void => {
     const entries: KVEntry[] = instance.getAllKeys().map((key) => ({ key, value: readValue(key) }));
-    const payload: StorageSnapshotPayload = { engine: "mmkv", dbName: options.dbName, entries };
+    const payload: StorageSnapshotPayload = { engine: "mmkv", dbName: options.dbName, entries, location };
     core.transport.send(createEnvelope("storage/snapshot", core.appId, payload));
   };
 

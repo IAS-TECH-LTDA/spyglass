@@ -183,6 +183,9 @@ export const en = {
   "storage.noRows": "No rows.",
   "storage.resizeDetailAria": "Resize detail panel",
   "storage.goToAria": "Go to {table}.id = {id}",
+  "storage.location.label": "Path",
+  "storage.location.copyAria": "Copy path",
+  "storage.location.configuredNote": "set by the app, not read from the engine",
 
   // ---------------------------------------------------------------------
   // graph (views/graph/GraphView.tsx)

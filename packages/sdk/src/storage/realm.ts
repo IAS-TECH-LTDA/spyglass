@@ -1,5 +1,5 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
-import type { StorageChangePayload, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
+import type { StorageChangePayload, StorageLocation, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** A Realm property schema entry is either a shorthand type string or a descriptor object with `.type`. */
@@ -21,6 +21,8 @@ interface RealmResultsLike {
 interface RealmLike {
   schema: RealmObjectSchemaLike[];
   objects(schemaName: string): RealmResultsLike;
+  /** The real Realm instance always has this — declared optional here only because it's a structural interface and some test doubles won't bother. */
+  path?: string;
 }
 
 export interface RealmAdapterOptions {
@@ -54,13 +56,14 @@ export function attachRealm(realm: RealmLike, options: RealmAdapterOptions = {})
     })),
   }));
   const collections = schema.map((s) => ({ name: s.name, results: realm.objects(s.name) }));
+  const location: StorageLocation | undefined = realm.path ? { path: realm.path, source: "exact" } : undefined;
 
   const snapshotAll = (): void => {
     const rows: Record<string, unknown[]> = {};
     for (const { name, results } of collections) {
       rows[name] = safeSerialize(Array.from(results as unknown as ArrayLike<unknown>)) as unknown[];
     }
-    const payload: StorageSnapshotPayload = { engine: "realm", dbName, schema, rows };
+    const payload: StorageSnapshotPayload = { engine: "realm", dbName, schema, rows, location };
     core.transport.send(createEnvelope("storage/snapshot", core.appId, payload));
   };
 

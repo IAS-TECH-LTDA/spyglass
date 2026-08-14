@@ -1,5 +1,5 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
-import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageSnapshotPayload } from "spyglass-protocol";
+import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageLocation, StorageSnapshotPayload } from "spyglass-protocol";
 import { registerStorageWriteHandler } from "../commands.js";
 import { getCore } from "../core.js";
 import { parseMaybeJson, serializeForKv } from "./shared.js";
@@ -19,6 +19,15 @@ interface AsyncStorageLike {
 export interface AsyncStorageAdapterOptions {
   /** Label shown in the desktop inspector if the app uses more than one engine instance. */
   dbName?: string;
+  /**
+   * Absolute path to AsyncStorage's backing storage (spec 0013) — its own
+   * API never exposes where that lives (it's a RocksDB/SQLite file on
+   * Android, a directory of files on iOS, entirely implementation-defined),
+   * so there's nothing this adapter can read on its own. Pass it only if
+   * you've independently confirmed the path for your setup; reported as
+   * `source: "configured"`, never `"exact"`.
+   */
+  path?: string;
 }
 
 /**
@@ -41,11 +50,13 @@ export function attachAsyncStorage(
   const core = getCore();
   core.registerCapability("storage:asyncStorage");
 
+  const location: StorageLocation | undefined = options.path ? { path: options.path, source: "configured" } : undefined;
+
   const sendSnapshot = async (): Promise<void> => {
     const keys = await AsyncStorage.getAllKeys();
     const pairs = await AsyncStorage.multiGet(keys);
     const entries: KVEntry[] = pairs.map(([key, value]) => ({ key, value: parseMaybeJson(value) }));
-    const payload: StorageSnapshotPayload = { engine: "asyncStorage", dbName: options.dbName, entries };
+    const payload: StorageSnapshotPayload = { engine: "asyncStorage", dbName: options.dbName, entries, location };
     core.transport.send(createEnvelope("storage/snapshot", core.appId, payload));
   };
 

@@ -44,6 +44,29 @@ describe("envelope", () => {
     const result = createEnvelope("query/command-result", "app-1", { requestId: "req-1", ok: false, errorCode: "no-query", error: "nope" });
     expect(decodeEnvelope(encodeEnvelope(result))).toEqual(result);
   });
+
+  it("round-trips a storage/snapshot carrying a StorageLocation (spec 0013)", () => {
+    const exact = createEnvelope("storage/snapshot", "app-1", {
+      engine: "sqlite",
+      dbName: "app.db",
+      schema: [],
+      rows: {},
+      location: { path: "/data/data/com.my.app/databases/app.db", source: "exact" },
+    });
+    expect(decodeEnvelope(encodeEnvelope(exact))).toEqual(exact);
+
+    const configured = createEnvelope("storage/snapshot", "app-1", {
+      engine: "mmkv",
+      entries: [],
+      location: { path: "/data/user/0/com.my.app/files/mmkv/default", source: "configured" },
+    });
+    expect(decodeEnvelope(encodeEnvelope(configured))).toEqual(configured);
+
+    // Old SDKs/snapshots never set `location` at all — must stay a
+    // no-op-shaped optional field, not something decode fills in.
+    const noLocation = createEnvelope("storage/snapshot", "app-1", { engine: "asyncStorage", entries: [] });
+    expect(decodeEnvelope(encodeEnvelope(noLocation))).toEqual(noLocation);
+  });
 });
 
 describe("diffValues", () => {

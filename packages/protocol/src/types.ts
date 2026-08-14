@@ -297,6 +297,29 @@ export interface TableSchema {
   columns: ColumnSchema[];
 }
 
+/**
+ * Where the engine's backing file actually lives on the device/simulator
+ * (spec 0013) — `dbName` above is a cosmetic label the dev passes in, not a
+ * path, and no adapter read one before this. Absent entirely when the
+ * adapter has no way to find it (AsyncStorage/MMKV/WatermelonDB without a
+ * `path` option) rather than guessing: a wrong path is worse than none once
+ * something (spec 0015's export/import) starts reading the file it points
+ * at.
+ */
+export interface StorageLocation {
+  /** Absolute path on the device/simulator's own filesystem. */
+  path: string;
+  /**
+   * `"exact"` — read straight from the engine itself (SQLite's `PRAGMA
+   * database_list`, Realm's `realm.path`), so it's provably where the data
+   * lives right now. `"configured"` — a `path` option the dev passed to
+   * `attachX(...)` by hand; trustworthy if they got it right, but not
+   * verified against the engine. There's no third tier — an adapter that
+   * can't do either of these just omits `location` instead of guessing.
+   */
+  source: "exact" | "configured";
+}
+
 export interface StorageSnapshotPayload {
   engine: StorageEngine;
   dbName?: string;
@@ -306,6 +329,7 @@ export interface StorageSnapshotPayload {
   entries?: KVEntry[];
   /** For relational/collection engines: table/collection name -> rows. */
   rows?: Record<string, unknown[]>;
+  location?: StorageLocation;
 }
 
 export type StorageChangeKind =

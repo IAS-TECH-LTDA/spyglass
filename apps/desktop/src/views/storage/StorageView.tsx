@@ -30,6 +30,7 @@ const ENGINE_META: Record<StorageEngine, { label: string; color: string; kind: E
 const DETAIL_EXPAND_DEPTH = 6;
 
 export function StorageView({ appId }: { appId: string }) {
+  const { t } = useT();
   const appData = useConnectionStore((s) => s.data[appId]);
   const storage = appData?.storage ?? {};
   const engines = Object.keys(storage) as StorageEngine[];
@@ -96,6 +97,17 @@ export function StorageView({ appId }: { appId: string }) {
           );
         })}
       </nav>
+
+      {snapshot?.location && (
+        <div className="storage-location">
+          <span>{t("storage.location.label")}</span>
+          <code>{snapshot.location.path}</code>
+          <CopyButton size="sm" title={t("storage.location.copyAria")} text={snapshot.location.path} />
+          {snapshot.location.source === "configured" && (
+            <span className="storage-location-note">({t("storage.location.configuredNote")})</span>
+          )}
+        </div>
+      )}
 
       {snapshot?.entries && activeEngine && (
         <KvTable

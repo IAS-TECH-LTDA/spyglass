@@ -1,5 +1,5 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
-import type { StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
+import type { StorageLocation, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
 import { getCore } from "../core.js";
 
 /** Structural subset of a WatermelonDB `Model` instance. */
@@ -35,6 +35,15 @@ export interface WatermelonAdapterOptions {
   dbName?: string;
   /** Defaults to every table in the schema; pass a subset to skip large/irrelevant tables. */
   tables?: string[];
+  /**
+   * Absolute path to the underlying SQLite file (spec 0013) — WatermelonDB's
+   * own `Database`/`SQLiteAdapter` types don't expose the path this adapter
+   * receives, so there's no way to read it back; pass it yourself if you
+   * know it (e.g. the same value you gave `SQLiteAdapter({ dbName })`).
+   * Reported to the desktop as `source: "configured"`, not `"exact"`, since
+   * it isn't verified against the real file.
+   */
+  path?: string;
 }
 
 /**
@@ -72,11 +81,12 @@ export function attachWatermelonDB(
   });
 
   const latestRows = new Map<string, unknown[]>();
+  const location: StorageLocation | undefined = options.path ? { path: options.path, source: "configured" } : undefined;
 
   const sendSnapshot = (): void => {
     const rows: Record<string, unknown[]> = {};
     for (const name of tableNames) rows[name] = latestRows.get(name) ?? [];
-    const payload: StorageSnapshotPayload = { engine: "watermelondb", dbName, schema, rows };
+    const payload: StorageSnapshotPayload = { engine: "watermelondb", dbName, schema, rows, location };
     core.transport.send(createEnvelope("storage/snapshot", core.appId, payload));
   };
 
