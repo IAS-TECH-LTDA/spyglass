@@ -59,6 +59,7 @@ export const pt = {
   "settings.apps": "Apps",
   "settings.noAppsYet": "Nenhum app conectado ainda.",
   "settings.version": "Spyglass {version}",
+  "settings.madeBy": "Feito pela IASTech",
 
   // ---------------------------------------------------------------------
   // connect (views/connect/ConnectView.tsx)

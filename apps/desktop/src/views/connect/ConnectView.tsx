@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CopyButton } from "../../components/CopyButton";
 import { t, useT, type TranslationKey } from "../../i18n";
 import { Trans } from "../../i18n/Trans";
-import { openRepoLink } from "../../lib/repoLink";
+import { openRepoLink } from "../../lib/externalLinks";
 import {
   getAdbStatus,
   getConnectionInfo,

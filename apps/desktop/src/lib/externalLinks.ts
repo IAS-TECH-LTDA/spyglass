@@ -12,7 +12,16 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 export const REPO_URL = "https://github.com/IAS-TECH-LTDA/spyglass";
+export const IASTECH_URL = "https://iastechconsultoria.com.br/";
+
+function open(url: string): void {
+  void openUrl(url).catch(() => {});
+}
 
 export function openRepoLink(): void {
-  void openUrl(REPO_URL).catch(() => {});
+  open(REPO_URL);
+}
+
+export function openIasTechSite(): void {
+  open(IASTECH_URL);
 }

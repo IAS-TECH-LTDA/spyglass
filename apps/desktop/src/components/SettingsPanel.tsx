@@ -1,7 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef, useState } from "react";
 import { appAlertKey } from "../lib/alerts";
-import { openRepoLink } from "../lib/repoLink";
+import { openIasTechSite, openRepoLink } from "../lib/externalLinks";
 import { useAlertSettings } from "../state/alertSettings";
 import { useConnectionStore } from "../state/connection";
 import { useLocaleStore, type Locale } from "../state/locale";
@@ -205,6 +205,11 @@ export function SettingsPanel() {
               {t("common.repoLink")}
             </button>
           </p>
+
+          <button type="button" className="settings-brand" onClick={openIasTechSite} title={t("settings.madeBy")}>
+            <span>{t("settings.madeBy")}</span>
+            <img src="/iastech-logo.png" alt="IASTech" className="settings-brand-logo" />
+          </button>
         </div>
       )}
     </div>

@@ -2335,6 +2335,29 @@ button.jgn-row {
   text-align: center;
 }
 
+.settings-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.settings-brand:hover {
+  color: var(--text);
+}
+
+.settings-brand-logo {
+  height: 14px;
+  width: auto;
+}
+
 .alerts-chip-row {
   display: flex;
   gap: 6px;

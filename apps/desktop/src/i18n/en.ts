@@ -72,6 +72,7 @@ export const en = {
   "settings.apps": "Apps",
   "settings.noAppsYet": "No apps connected yet.",
   "settings.version": "Spyglass {version}",
+  "settings.madeBy": "Made by IASTech",
 
   // ---------------------------------------------------------------------
   // connect (views/connect/ConnectView.tsx)
