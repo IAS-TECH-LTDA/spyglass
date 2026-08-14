@@ -1,6 +1,6 @@
 [package]
 name = "spyglass-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Spyglass — visual real-time inspector for React Native apps"
 edition = "2021"
 rust-version = "1.77"
