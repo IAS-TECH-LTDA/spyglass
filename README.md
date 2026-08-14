@@ -6,7 +6,7 @@ network requests, viewed live in a desktop app — similar in spirit to
 [Reactotron](https://github.com/infinitered/reactotron), built as a pnpm
 monorepo of three pieces that talk over one wire protocol.
 
-<!-- screenshot placeholder: apps/desktop's graph/state/storage views -->
+![Navigation graph view](./assets/screenshots/navigation.png)
 
 ## What you get
 
@@ -26,6 +26,35 @@ monorepo of three pieces that talk over one wire protocol.
   Simulator) — device total memory, the connected app's own memory and
   swap, read directly by the desktop app (`adb`/`footprint`), no extra code
   needed in your app at all.
+
+<details>
+<summary>More screenshots (State, Storage, Console, Network, Queries, Performance)</summary>
+
+**State** — every attached store (Redux/Zustand/Jotai/Recoil/MobX), diffed per action:
+
+![State view](./assets/screenshots/state.png)
+
+**Storage** — AsyncStorage/MMKV/SQLite/Realm/WatermelonDB/web Storage, key by key:
+
+![Storage view](./assets/screenshots/storage.png)
+
+**Console** — every `console.log/info/warn/error/debug`, searchable, still printing normally in Metro too:
+
+![Console view](./assets/screenshots/console.png)
+
+**Network** — every request/response, headers and bodies included:
+
+![Network view](./assets/screenshots/network.png)
+
+**Queries** — React Query's cache, per query key:
+
+![Queries view](./assets/screenshots/queries.png)
+
+**Performance** — render FPS, stalls, and device/app memory + swap:
+
+![Performance view](./assets/screenshots/performance.png)
+
+</details>
 
 ## Packages
 
