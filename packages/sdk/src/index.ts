@@ -20,7 +20,7 @@ import { Transport } from "./transport/ws.js";
  * automatically, so a release that forgets to bump it fails `pnpm test`
  * instead of silently shipping a stale version string).
  */
-export const SDK_VERSION = "0.1.2";
+export const SDK_VERSION = "0.1.3";
 
 export interface AutoAttachOptions {
   /** Defaults to the same dev-environment detection as `InitOptions.diagnostics`. */
