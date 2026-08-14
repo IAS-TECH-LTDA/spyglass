@@ -62,9 +62,19 @@ export const useUpdaterStore = create<UpdaterState>()(
 
       async restart() {
         if (get().status !== "ready") return;
-        // No local state update on success — the app relaunches out from
-        // under this store before there'd be anything left to render.
-        await installAndRelaunch();
+        try {
+          // No local state update on success — the app relaunches out from
+          // under this store before there'd be anything left to render.
+          await installAndRelaunch();
+        } catch {
+          // Same reasoning as download()'s catch: this only runs after the
+          // user explicitly clicked "Restart now", so a failure (e.g. the
+          // macOS translocation case in the README — the app was opened
+          // straight from the .dmg/Downloads instead of /Applications, so
+          // the bundle can't be replaced in place) must surface as a
+          // visible error state, not vanish silently.
+          set({ status: "error" });
+        }
       },
 
       dismiss() {
