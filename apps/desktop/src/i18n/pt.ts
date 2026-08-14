@@ -173,6 +173,14 @@ export const pt = {
   "storage.location.label": "Caminho",
   "storage.location.copyAria": "Copiar caminho",
   "storage.location.configuredNote": "informado pelo app, não lido do engine",
+  "storage.clear.engineButton": "Limpar",
+  "storage.clear.tableButton": "Limpar tabela",
+  "storage.clear.unsupported": "Limpeza não é suportada para este engine/tabela.",
+  "storage.clear.confirmTitle": "Limpar {target}?",
+  "storage.clear.confirmBody": "Isso apaga permanentemente todos os dados de {target} no app conectado. Não pode ser desfeito.",
+  "storage.clear.confirmPrompt": "Digite {target} para confirmar.",
+  "storage.clear.confirmButton": "Excluir permanentemente",
+  "storage.clear.cancelButton": "Cancelar",
 
   // ---------------------------------------------------------------------
   // graph (views/graph/GraphView.tsx)

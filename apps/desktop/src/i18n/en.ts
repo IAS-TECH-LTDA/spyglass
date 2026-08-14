@@ -186,6 +186,14 @@ export const en = {
   "storage.location.label": "Path",
   "storage.location.copyAria": "Copy path",
   "storage.location.configuredNote": "set by the app, not read from the engine",
+  "storage.clear.engineButton": "Clear",
+  "storage.clear.tableButton": "Clear table",
+  "storage.clear.unsupported": "Clearing isn't supported for this engine/table.",
+  "storage.clear.confirmTitle": "Clear {target}?",
+  "storage.clear.confirmBody": "This permanently deletes all data in {target} from the connected app. This can't be undone.",
+  "storage.clear.confirmPrompt": "Type {target} to confirm.",
+  "storage.clear.confirmButton": "Delete permanently",
+  "storage.clear.cancelButton": "Cancel",
 
   // ---------------------------------------------------------------------
   // graph (views/graph/GraphView.tsx)

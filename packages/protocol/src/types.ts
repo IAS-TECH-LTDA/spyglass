@@ -49,6 +49,13 @@ export type MessageType =
   | "query/write-result"
   | "query/command"
   | "query/command-result"
+  // Same direction/gating as storage/write, for wiping a storage engine
+  // instead of one key/row — see StorageClearPayload's doc comment (spec
+  // 0014). A separate pair rather than folding into StorageWritePayload:
+  // that payload's `key` is required and its doc comment scopes it to
+  // key/value engines only, neither of which holds for "clear everything".
+  | "storage/clear"
+  | "storage/clear-result"
   | "log/entry"
   | "network/request"
   | "network/response"
@@ -103,6 +110,8 @@ export type Capability =
   | "memory:clear-cache"
   /** Same as `storage:write`/`state:write`, for `query/write` and `query/command` (spec 0010) — covers both under one capability, same risk category as `state:write` covering a store's whole state object. Advertised whenever the shared inbound-commands channel is on and `attachReactQuery` has registered its handlers. */
   | "query:write"
+  /** Same as `storage:write`, for `storage/clear` (spec 0014) — a per-engine/dbName registration, same as `storage:write`'s, so a clear against an engine with no registered clear handler still gets a real `errorCode` instead of a silent timeout. */
+  | "storage:clear"
   | "console"
   | "network"
   | "query:react-query"
@@ -396,6 +405,43 @@ export interface StorageWriteResultPayload {
   error?: string;
 }
 
+/**
+ * Desktop -> SDK: wipe a storage engine, or one table/collection of a
+ * relational one, from the Storage view's "Clear" action (spec 0014).
+ * Deliberately a separate pair from `StorageWritePayload` rather than an
+ * extra `op` value there: that payload's `key` is required and its own doc
+ * comment scopes it to KV engines — neither holds for "delete everything",
+ * which also has to reach the relational engines `StorageWritePayload`
+ * explicitly excludes.
+ *
+ * Same delivery/timeout contract as `StorageWritePayload` — see its doc
+ * comment. `requestId`/`STORAGE_WRITE_TIMEOUT_MS` are shared with it.
+ */
+export interface StorageClearPayload {
+  requestId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  /** `"table"` only makes sense for relational/collection engines — `table` is required alongside it. */
+  scope: "all" | "table";
+  /** Required when `scope: "table"`; absent for `scope: "all"`. */
+  table?: string;
+}
+
+export type StorageClearErrorCode =
+  /** No attached adapter for this engine/dbName, or the adapter has no clear handler registered for it. */
+  | "no-adapter"
+  | "unsupported-op"
+  /** The underlying engine call itself threw. */
+  | "engine-error";
+
+export interface StorageClearResultPayload {
+  requestId: string;
+  ok: boolean;
+  errorCode?: StorageClearErrorCode;
+  /** Human-readable, shown verbatim in the desktop's failure state. */
+  error?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Query caches (React Query, ...)
 // ---------------------------------------------------------------------------
@@ -589,6 +635,8 @@ export interface PayloadByType {
   "storage/change": StorageChangePayload;
   "storage/write": StorageWritePayload;
   "storage/write-result": StorageWriteResultPayload;
+  "storage/clear": StorageClearPayload;
+  "storage/clear-result": StorageClearResultPayload;
   "state/write": StateWritePayload;
   "state/write-result": StateWriteResultPayload;
   "memory/clear-cache": MemoryClearCachePayload;

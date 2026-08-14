@@ -1,5 +1,6 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { StorageLocation, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
+import { registerStorageClearHandler, StorageClearUnsupportedError } from "../commands.js";
 import { getCore } from "../core.js";
 
 /** Structural subset of a WatermelonDB `Model` instance. */
@@ -29,6 +30,14 @@ interface WatermelonTableSchemaLike {
 interface WatermelonDatabaseLike {
   schema: { tables: Record<string, WatermelonTableSchemaLike> };
   collections: { get(tableName: string): WatermelonCollectionLike };
+  /**
+   * The real `Database`'s write-transaction wrapper and full-reset method
+   * (spec 0014) — declared optional here for the same structural-interface
+   * reason as the rest of this file. Without them, this adapter is
+   * read-only and a clear request replies `errorCode: "unsupported-op"`.
+   */
+  write?<T>(callback: () => Promise<T> | T): Promise<T>;
+  unsafeResetDatabase?(): Promise<void>;
 }
 
 export interface WatermelonAdapterOptions {
@@ -101,7 +110,24 @@ export function attachWatermelonDB(
     });
   });
 
+  const unregisterClear = registerStorageClearHandler("watermelondb", dbName, async (scope) => {
+    // WatermelonDB's public API has no per-table wipe — only the
+    // whole-database `unsafeResetDatabase()` (its name is a deliberate
+    // warning: the app should reload after this, same caveat as the
+    // desktop's db-file import feature).
+    if (scope !== "all") {
+      throw new StorageClearUnsupportedError('WatermelonDB clearing only supports scope: "all" — no per-table reset in its public API.');
+    }
+    if (!database.write || !database.unsafeResetDatabase) {
+      throw new StorageClearUnsupportedError("This Database has no write()/unsafeResetDatabase().");
+    }
+    await database.write(() => database.unsafeResetDatabase!());
+    for (const name of tableNames) latestRows.set(name, []);
+    sendSnapshot();
+  });
+
   return () => {
     for (const subscription of subscriptions) subscription.unsubscribe();
+    unregisterClear();
   };
 }

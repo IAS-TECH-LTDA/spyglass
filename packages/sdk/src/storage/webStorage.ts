@@ -1,6 +1,6 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageEngine, StorageSnapshotPayload } from "spyglass-protocol";
-import { registerStorageWriteHandler } from "../commands.js";
+import { registerStorageClearHandler, registerStorageWriteHandler, StorageClearUnsupportedError } from "../commands.js";
 import { getCore } from "../core.js";
 import { parseMaybeJson, serializeForKv } from "./shared.js";
 
@@ -92,11 +92,20 @@ export function attachWebStorage(storage: Storage, options: WebStorageAdapterOpt
     else storage.setItem(key, serializeForKv(value));
   });
 
+  // Through the patched `storage.clear` above (spec 0014) — same
+  // "the echo comes for free" reasoning as the write handler. No
+  // `scope: "table"` — localStorage/sessionStorage have no tables.
+  const unregisterClear = registerStorageClearHandler(engine, options.dbName, (scope) => {
+    if (scope !== "all") throw new StorageClearUnsupportedError(`${engine} has no tables — only scope: "all" is supported.`);
+    storage.clear();
+  });
+
   return () => {
     storage.setItem = original.setItem;
     storage.removeItem = original.removeItem;
     storage.clear = original.clear;
     globalThis.removeEventListener?.("storage", onCrossTabChange);
     unregisterWrite();
+    unregisterClear();
   };
 }

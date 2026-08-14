@@ -266,6 +266,11 @@ export function init(options: InitOptions): SpyglassHandle {
   let disableInboundCommands: (() => void) | undefined;
   if (resolveRemoteWrites(options.allowRemoteWrites, autoAttachDevDefault)) {
     capabilities.add("storage:write");
+    // Same "advertised unconditionally" reasoning as the rest of this block
+    // — a per-resource registration question (see registerStorageClearHandler
+    // in commands.ts), answered by errorCode: "no-adapter"/"unsupported-op"
+    // per request, not by withholding the capability itself (spec 0014).
+    capabilities.add("storage:clear");
     // Advertised unconditionally alongside storage:write, independent of
     // whether any store has actually registered a handler yet (the zustand
     // auto-attach above is async) — an unregistered storeId simply gets

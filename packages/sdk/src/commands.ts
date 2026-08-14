@@ -9,6 +9,8 @@ import type {
   QueryWriteResultPayload,
   StateWriteErrorCode,
   StateWriteResultPayload,
+  StorageClearErrorCode,
+  StorageClearResultPayload,
   StorageEngine,
   StorageWriteErrorCode,
   StorageWriteOp,
@@ -29,6 +31,9 @@ import { clearCaches } from "./memoryClear.js";
 
 export type StorageWriteHandler = (op: StorageWriteOp, key: string, value: unknown) => void | Promise<void>;
 
+/** @see StorageClearPayload's doc comment (packages/protocol). `table` is present only for `scope: "table"`. */
+export type StorageClearHandler = (scope: "all" | "table", table?: string) => void | Promise<void>;
+
 /** @see StateWritePayload's doc comment (packages/protocol) for why this is a shallow-merge contract, not a replace. */
 export type StateWriteHandler = (nextState: unknown) => void | Promise<void>;
 
@@ -43,6 +48,7 @@ function storageHandlerKey(engine: StorageEngine, dbName: string | undefined): s
 }
 
 const storageWriteHandlers = new Map<string, StorageWriteHandler>();
+const storageClearHandlers = new Map<string, StorageClearHandler>();
 const stateWriteHandlers = new Map<string, StateWriteHandler>();
 let queryWriteHandler: QueryWriteHandler | undefined;
 let queryCommandHandler: QueryCommandHandler | undefined;
@@ -70,6 +76,25 @@ export function registerStorageWriteHandler(
 }
 
 /**
+ * @internal Same registration discipline as `registerStorageWriteHandler`,
+ * for `storage/clear` (spec 0014) — a separate map, keyed the same way, so
+ * an engine can register a write handler without a clear handler (or vice
+ * versa): a runner without an `exec` still gets `no-adapter`/`unsupported-op`
+ * rather than being forced to implement clearing to support writes at all.
+ */
+export function registerStorageClearHandler(
+  engine: StorageEngine,
+  dbName: string | undefined,
+  handler: StorageClearHandler,
+): () => void {
+  const key = storageHandlerKey(engine, dbName);
+  storageClearHandlers.set(key, handler);
+  return () => {
+    if (storageClearHandlers.get(key) === handler) storageClearHandlers.delete(key);
+  };
+}
+
+/**
  * @internal Called by `state/zustand.ts`'s `withSpyglass` at store-creation
  * time. Unlike storage adapters, a store creator never re-runs/detaches on
  * its own, so there's no unregister call here — a second `withSpyglass()`
@@ -87,6 +112,16 @@ export function registerStateWriteHandler(storeId: string, handler: StateWriteHa
  * `"no-query"`.
  */
 export class QueryNotFoundError extends Error {}
+
+/**
+ * Thrown by a `StorageClearHandler` to signal "this engine/scope combination
+ * genuinely can't be cleared" (e.g. a `SqliteQueryRunner` with no `exec`, or
+ * a `scope: "table"` request against an engine that only supports clearing
+ * everything) — reported as `errorCode: "unsupported-op"` instead of the
+ * default `"engine-error"` a real failure gets, so the desktop can tell "not
+ * possible" apart from "tried and failed".
+ */
+export class StorageClearUnsupportedError extends Error {}
 
 /**
  * @internal Called by `attachReactQuery` at attach time. Unlike storage
@@ -118,6 +153,13 @@ function replyStorage(core: SpyglassCore, requestId: string, ok: boolean, errorC
   if (errorCode !== undefined) payload.errorCode = errorCode;
   if (error !== undefined) payload.error = error;
   core.transport.send(createEnvelope("storage/write-result", core.appId, payload));
+}
+
+function replyStorageClear(core: SpyglassCore, requestId: string, ok: boolean, errorCode?: StorageClearErrorCode, error?: string): void {
+  const payload: StorageClearResultPayload = { requestId, ok };
+  if (errorCode !== undefined) payload.errorCode = errorCode;
+  if (error !== undefined) payload.error = error;
+  core.transport.send(createEnvelope("storage/clear-result", core.appId, payload));
 }
 
 function replyState(core: SpyglassCore, requestId: string, ok: boolean, errorCode?: StateWriteErrorCode, error?: string): void {
@@ -180,6 +222,36 @@ export function enableInboundCommands(core: SpyglassCore): () => void {
           .then(
             () => replyStorage(core, p.requestId, true),
             (err: unknown) => replyStorage(core, p.requestId, false, "engine-error", err instanceof Error ? err.message : String(err)),
+          );
+        return;
+      }
+      case "storage/clear": {
+        const p = envelope.payload;
+        const handler = storageClearHandlers.get(storageHandlerKey(p.engine, p.dbName));
+        if (!handler) {
+          replyStorageClear(core, p.requestId, false, "no-adapter", `No attached adapter for "${p.engine}"${p.dbName ? ` (${p.dbName})` : ""}.`);
+          return;
+        }
+        if (p.scope !== "all" && p.scope !== "table") {
+          replyStorageClear(core, p.requestId, false, "unsupported-op", `Unsupported scope: ${String(p.scope)}`);
+          return;
+        }
+        if (p.scope === "table" && !p.table) {
+          replyStorageClear(core, p.requestId, false, "unsupported-op", 'scope: "table" requires a table name.');
+          return;
+        }
+        Promise.resolve()
+          .then(() => handler(p.scope, p.table))
+          .then(
+            () => replyStorageClear(core, p.requestId, true),
+            (err: unknown) =>
+              replyStorageClear(
+                core,
+                p.requestId,
+                false,
+                err instanceof StorageClearUnsupportedError ? "unsupported-op" : "engine-error",
+                err instanceof Error ? err.message : String(err),
+              ),
           );
         return;
       }

@@ -7,6 +7,7 @@ import {
   type PendingQueryCommand,
   type PendingQueryWrite,
   type PendingStateWrite,
+  type PendingStorageClear,
   type PendingWrite,
 } from "../connection";
 import type { AppInfo } from "../../ipc";
@@ -101,6 +102,30 @@ function seedAppWithPendingCacheClear(clear: PendingCacheClear): void {
   }));
 }
 
+function pendingStorageClear(overrides: Partial<PendingStorageClear> = {}): PendingStorageClear {
+  return {
+    requestId: "screq-1",
+    engine: "asyncStorage",
+    scope: "all",
+    sentAt: Date.now(),
+    status: "pending",
+    ...overrides,
+  };
+}
+
+function seedAppWithPendingStorageClear(clear: PendingStorageClear): void {
+  useConnectionStore.setState((s) => ({
+    apps: { ...s.apps, [APP_ID]: fakeAppInfo() },
+    data: {
+      ...s.data,
+      [APP_ID]: {
+        ...emptyAppDataFor(APP_ID),
+        pendingStorageClears: { [clear.requestId]: clear },
+      },
+    },
+  }));
+}
+
 function pendingQueryWrite(overrides: Partial<PendingQueryWrite> = {}): PendingQueryWrite {
   return {
     requestId: "qwreq-1",
@@ -164,6 +189,7 @@ function emptyAppDataFor(_appId: string): AppData {
     pendingWrites: {},
     pendingStateWrites: {},
     pendingCacheClears: {},
+    pendingStorageClears: {},
     pendingQueryWrites: {},
     pendingQueryCommands: {},
     queriesMeta: {},
@@ -402,6 +428,76 @@ describe("pendingCacheClears reconciliation (spec 0008)", () => {
     const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingCacheClears);
     expect(entry.status).toBe("pending");
     expect(entry.requestId).toMatch(/^cc_/);
+  });
+});
+
+describe("pendingStorageClears reconciliation (spec 0014)", () => {
+  it("storage/clear-result ok:true marks the matching pending clear applied", () => {
+    seedAppWithPendingStorageClear(pendingStorageClear());
+
+    const result = createEnvelope("storage/clear-result", APP_ID, { requestId: "screq-1", ok: true });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingStorageClears["screq-1"].status).toBe("applied");
+  });
+
+  it("storage/clear-result ok:false marks it failed, carrying the error and errorCode through", () => {
+    seedAppWithPendingStorageClear(pendingStorageClear({ engine: "sqlite", scope: "table", table: "todos" }));
+
+    const result = createEnvelope("storage/clear-result", APP_ID, {
+      requestId: "screq-1",
+      ok: false,
+      errorCode: "unsupported-op",
+      error: "no exec()",
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const clear = useConnectionStore.getState().data[APP_ID].pendingStorageClears["screq-1"];
+    expect(clear.status).toBe("failed");
+    expect(clear.error).toBe("no exec()");
+  });
+
+  it("a storage/clear-result for an unknown requestId is ignored, not crashing or creating a phantom entry", () => {
+    seedAppWithPendingStorageClear(pendingStorageClear());
+
+    const result = createEnvelope("storage/clear-result", APP_ID, { requestId: "some-other-request", ok: true });
+    expect(() => useConnectionStore.getState().handleEnvelope(result)).not.toThrow();
+
+    const pendingStorageClears = useConnectionStore.getState().data[APP_ID].pendingStorageClears;
+    expect(pendingStorageClears["screq-1"].status).toBe("pending"); // untouched
+    expect(pendingStorageClears["some-other-request"]).toBeUndefined();
+  });
+
+  it("markDisconnected fails every still-pending storage clear for that app immediately", () => {
+    seedAppWithPendingStorageClear(pendingStorageClear());
+    useConnectionStore.getState().markDisconnected(APP_ID);
+
+    const pendingStorageClears = useConnectionStore.getState().data[APP_ID].pendingStorageClears;
+    expect(pendingStorageClears["screq-1"].status).toBe("failed");
+    expect(pendingStorageClears["screq-1"].error).toBe("App disconnected");
+  });
+
+  it("sendStorageClear tracks a new pending entry for scope: \"all\"", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    useConnectionStore.getState().sendStorageClear(APP_ID, "asyncStorage", undefined, "all");
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingStorageClears);
+    expect(entry.status).toBe("pending");
+    expect(entry.requestId).toMatch(/^sc_/);
+    expect(entry.engine).toBe("asyncStorage");
+    expect(entry.scope).toBe("all");
+  });
+
+  it("sendStorageClear tracks the table name for scope: \"table\"", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    useConnectionStore.getState().sendStorageClear(APP_ID, "sqlite", "app.db", "table", "sessions");
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingStorageClears);
+    expect(entry.scope).toBe("table");
+    expect(entry.table).toBe("sessions");
+    expect(entry.dbName).toBe("app.db");
   });
 });
 

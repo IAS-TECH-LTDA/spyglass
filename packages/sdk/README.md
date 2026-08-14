@@ -241,6 +241,7 @@ environments, **never** forced on in production, see
 | What | Where in the desktop | Requires | Capability advertised |
 |---|---|---|---|
 | Edit a Storage KV value | Storage tab, click a field | `attachAsyncStorage`/`attachMmkv`/`attachWebStorage` (or the storage `autoAttach`) | `storage:write` |
+| Clear a storage engine (or one table/collection) | Storage tab's "Clear" action | Any storage adapter — SQLite/WatermelonDB need `exec`/`write` support, see below | `storage:clear` |
 | Edit a Zustand store's state | Stores tab, click a field | `withSpyglass(...)` or `autoAttach.state.zustand` | `state:write` |
 | "Clear app caches" | Performance tab's Memory panel | nothing — always available once the gate is on | `memory:clear-cache` |
 | Edit a React Query's cached data | Queries tab, click the Data field | `attachReactQuery(queryClient)` | `query:write` |
@@ -248,6 +249,28 @@ environments, **never** forced on in production, see
 
 None of this needs new code beyond attaching the adapter you'd already want
 for the *read* side — editing reuses the exact same connection.
+
+**Clearing works out of the box for the key/value engines**
+(AsyncStorage/MMKV/localStorage/sessionStorage) — no extra setup. The two
+relational engines need one more thing, since neither has a built-in
+"delete everything" your adapter can call on its own:
+
+```ts
+// SQLite — the runner needs a write path, not just query()
+const runner: SqliteQueryRunner = {
+  query: (sql, params) => db.getAllAsync(sql, params),
+  exec: (sql, params) => db.runAsync(sql, params).then(() => undefined),
+};
+attachSqlite(runner);
+
+// WatermelonDB — clearing needs the real Database object's write()/unsafeResetDatabase()
+attachWatermelonDB(database); // already has both; only a structural test double would lack them
+```
+
+Without `exec`/`write`, the desktop's "Clear" button still shows up (the
+capability is engine-wide, not per-instance) but replies with a clear "not
+supported" instead of failing silently — see `errorCode: "unsupported-op"`
+in `StorageClearResultPayload`.
 
 **Storage/Zustand edits never apply optimistically.** The desktop sends the
 edit, shows "pending", and only flips to "applied" once the app itself

@@ -29,6 +29,7 @@ _(nenhum item pendente)_
 | 0011 | Destaque em telas editáveis + correlação Network↔Queries/Storage | [0011-destaque-edicao-e-correlacao-network.md](specs/0011-destaque-edicao-e-correlacao-network.md) | 7 | 2 | 85% | 3 | 4.0 | Validação manual ao vivo (banner/destaque nas 4 telas, navegação pelos chips "Related", caso de ambiguidade proposital) |
 | 0012 | Internacionalização do desktop (inglês/português) | [0012-internacionalizacao-desktop.md](specs/0012-internacionalizacao-desktop.md) | 5 | 1 | 90% | 5 | 0.9 | Validação manual ao vivo da troca de idioma nas 22 telas/componentes |
 | 0013 | Caminho do arquivo de storage no dispositivo | [0013-caminho-storage-dispositivo.md](specs/0013-caminho-storage-dispositivo.md) | 5 | 2 | 80% | 2 | 4.0 | Validação manual ao vivo com SQLite/Realm reais (Android/iOS), conferindo o caminho contra `adb`/`realm.path` |
+| 0014 | Limpar dados de storage a partir do desktop | [0014-limpar-storage-desktop.md](specs/0014-limpar-storage-desktop.md) | 5 | 2 | 70% | 4 | 1.8 | Validação manual ao vivo: limpar AsyncStorage inteiro, limpar uma tabela SQLite específica com `exec`, e conferir que um runner sem `exec` responde "não suportado" em vez de travar |
 
 ## Entregue
 

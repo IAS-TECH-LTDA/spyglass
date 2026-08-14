@@ -1,5 +1,6 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { StorageChangePayload, StorageLocation, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
+import { registerStorageClearHandler, StorageClearUnsupportedError } from "../commands.js";
 import { getCore } from "../core.js";
 
 /** A Realm property schema entry is either a shorthand type string or a descriptor object with `.type`. */
@@ -23,6 +24,15 @@ interface RealmLike {
   objects(schemaName: string): RealmResultsLike;
   /** The real Realm instance always has this — declared optional here only because it's a structural interface and some test doubles won't bother. */
   path?: string;
+  /**
+   * Realm's own write-transaction wrapper and delete methods (spec 0014) —
+   * declared optional for the same structural-interface reason as `path`.
+   * Without them, this adapter is read-only and a clear request replies
+   * `errorCode: "unsupported-op"`.
+   */
+  write?(callback: () => void): void;
+  deleteAll?(): void;
+  delete?(objects: unknown): void;
 }
 
 export interface RealmAdapterOptions {
@@ -80,7 +90,22 @@ export function attachRealm(realm: RealmLike, options: RealmAdapterOptions = {})
     disposers.push(() => results.removeAllListeners?.());
   }
 
+  const unregisterClear = registerStorageClearHandler("realm", dbName, (scope, table) => {
+    if (!realm.write || !realm.deleteAll) throw new StorageClearUnsupportedError("This Realm instance has no write()/deleteAll().");
+    if (scope === "table") {
+      if (!table) throw new StorageClearUnsupportedError('scope: "table" requires a table name.');
+      if (!realm.delete) throw new StorageClearUnsupportedError("This Realm instance has no delete().");
+      realm.write!(() => realm.delete!(realm.objects(table)));
+    } else {
+      realm.write!(() => realm.deleteAll!());
+    }
+    // Not guaranteed to fire the per-collection change listener above for
+    // every collection touched by a bulk delete — re-snapshot explicitly.
+    snapshotAll();
+  });
+
   return () => {
     for (const dispose of disposers) dispose();
+    unregisterClear();
   };
 }

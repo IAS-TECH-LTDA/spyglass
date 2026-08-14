@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { applyPatch } from "spyglass-protocol";
 import type { StorageEngine } from "spyglass-protocol";
 import { useConnectionStore } from "../../state/connection";
-import type { PendingWrite } from "../../state/connection";
+import type { PendingStorageClear, PendingWrite } from "../../state/connection";
 import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import type { JsonGraphEditable } from "../../components/jsonGraph/JsonGraph";
 import { CopyButton } from "../../components/CopyButton";
+import { ConfirmClearDialog } from "../../components/ConfirmClearDialog";
 import { toJsonPointer } from "../../lib/jsonPointer";
 import { useResizableWidth } from "../../lib/useResizableWidth";
 import { LiveEditBanner } from "../../components/LiveEditBanner";
@@ -39,6 +40,14 @@ export function StorageView({ appId }: { appId: string }) {
   // — absent means either a production build, or an SDK version that
   // predates this feature. Either way, editing simply isn't offered.
   const canWrite = useConnectionStore((s) => s.apps[appId]?.capabilities.includes("storage:write") ?? false);
+  // Same "don't show a control that can only time out" reasoning (spec
+  // 0014) — a per-request `errorCode: "unsupported-op"` still covers the
+  // (engine, dbName) pairs whose adapter genuinely can't clear, once
+  // attempted; the capability itself just gates the button existing at all.
+  const canClear = useConnectionStore((s) => s.apps[appId]?.capabilities.includes("storage:clear") ?? false);
+  const sendStorageClear = useConnectionStore((s) => s.sendStorageClear);
+  const pendingStorageClears = useConnectionStore((s) => s.data[appId]?.pendingStorageClears);
+  const [confirmingEngineClear, setConfirmingEngineClear] = useState(false);
 
   // Consumes a "jump here from Network" request (spec 0011) exactly once —
   // switches to the target engine and pulses the matching KV row. See
@@ -59,6 +68,18 @@ export function StorageView({ appId }: { appId: string }) {
 
   const activeEngine = selectedEngine && storage[selectedEngine] ? selectedEngine : engines[0];
   const snapshot = activeEngine ? storage[activeEngine] : undefined;
+
+  // Most recently sent whole-engine clear, if any — drives the button's
+  // disabled/status-dot state. Mirrors MemoryPanel's ClearCachesButton.
+  const latestEngineClear = useMemo(() => {
+    if (!pendingStorageClears || !activeEngine) return undefined;
+    let latest: PendingStorageClear | undefined;
+    for (const c of Object.values(pendingStorageClears)) {
+      if (c.engine !== activeEngine || c.scope !== "all") continue;
+      if (!latest || c.sentAt > latest.sentAt) latest = c;
+    }
+    return latest;
+  }, [pendingStorageClears, activeEngine]);
 
   if (engines.length === 0) {
     return (
@@ -96,7 +117,34 @@ export function StorageView({ appId }: { appId: string }) {
             </button>
           );
         })}
+        {canClear && activeEngine && (
+          <button
+            type="button"
+            className="storage-clear-btn"
+            disabled={latestEngineClear?.status === "pending"}
+            onClick={() => setConfirmingEngineClear(true)}
+          >
+            {t("storage.clear.engineButton")}
+            {latestEngineClear?.status && (
+              <span
+                className={`jgn-status-dot jgn-status-dot-${latestEngineClear.status}`}
+                title={latestEngineClear.error ?? latestEngineClear.status}
+              />
+            )}
+          </button>
+        )}
       </nav>
+
+      {confirmingEngineClear && activeEngine && (
+        <ConfirmClearDialog
+          target={ENGINE_META[activeEngine].label}
+          onCancel={() => setConfirmingEngineClear(false)}
+          onConfirm={() => {
+            sendStorageClear(appId, activeEngine, snapshot?.dbName, "all");
+            setConfirmingEngineClear(false);
+          }}
+        />
+      )}
 
       {snapshot?.location && (
         <div className="storage-location">
@@ -119,7 +167,16 @@ export function StorageView({ appId }: { appId: string }) {
           highlightKey={highlightKey}
         />
       )}
-      {snapshot?.schema && snapshot.rows && <RelationalStorage schema={snapshot.schema} rows={snapshot.rows} />}
+      {snapshot?.schema && snapshot.rows && activeEngine && (
+        <RelationalStorage
+          appId={appId}
+          engine={activeEngine}
+          dbName={snapshot.dbName}
+          canClear={canClear}
+          schema={snapshot.schema}
+          rows={snapshot.rows}
+        />
+      )}
     </div>
   );
 }
@@ -297,16 +354,27 @@ function KvRow({
 }
 
 function RelationalStorage({
+  appId,
+  engine,
+  dbName,
+  canClear,
   schema,
   rows,
 }: {
+  appId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  canClear: boolean;
   schema: import("spyglass-protocol").TableSchema[];
   rows: Record<string, unknown[]>;
 }) {
   const { t } = useT();
+  const sendStorageClear = useConnectionStore((s) => s.sendStorageClear);
+  const pendingStorageClears = useConnectionStore((s) => s.data[appId]?.pendingStorageClears);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [highlightRowId, setHighlightRowId] = useState<string | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [confirmingTableClear, setConfirmingTableClear] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
   const {
     width: detailWidth,
@@ -352,6 +420,17 @@ function RelationalStorage({
 
   const labelColumn = tableSchema?.columns.find((c) => !c.isPrimaryKey)?.name ?? tableSchema?.columns[0]?.name;
 
+  // Mirrors the engine-level clear button's status tracking in StorageView.
+  const latestTableClear = useMemo(() => {
+    if (!pendingStorageClears || !tableName) return undefined;
+    let latest: PendingStorageClear | undefined;
+    for (const c of Object.values(pendingStorageClears)) {
+      if (c.scope !== "table" || c.table !== tableName) continue;
+      if (!latest || c.sentAt > latest.sentAt) latest = c;
+    }
+    return latest;
+  }, [pendingStorageClears, tableName]);
+
   return (
     <div
       className="schema-view"
@@ -383,9 +462,38 @@ function RelationalStorage({
         />
       )}
 
+      {tableName && confirmingTableClear && (
+        <ConfirmClearDialog
+          target={tableName}
+          onCancel={() => setConfirmingTableClear(false)}
+          onConfirm={() => {
+            sendStorageClear(appId, engine, dbName, "table", tableName);
+            setConfirmingTableClear(false);
+          }}
+        />
+      )}
+
       {tableName && (
         <aside className="schema-detail-panel">
-          <h3>{tableName}</h3>
+          <div className="schema-detail-panel-head">
+            <h3>{tableName}</h3>
+            {canClear && (
+              <button
+                type="button"
+                className="storage-clear-btn"
+                disabled={latestTableClear?.status === "pending"}
+                onClick={() => setConfirmingTableClear(true)}
+              >
+                {t("storage.clear.tableButton")}
+                {latestTableClear?.status && (
+                  <span
+                    className={`jgn-status-dot jgn-status-dot-${latestTableClear.status}`}
+                    title={latestTableClear.error ?? latestTableClear.status}
+                  />
+                )}
+              </button>
+            )}
+          </div>
           {tableRows.length === 0 ? (
             <div className="view-empty">{t("storage.noRows")}</div>
           ) : (

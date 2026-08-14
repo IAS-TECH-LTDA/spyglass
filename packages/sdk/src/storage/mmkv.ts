@@ -1,6 +1,6 @@
 import { createEnvelope } from "spyglass-protocol";
 import type { KVEntry, StorageChangePayload, StorageLocation, StorageSnapshotPayload } from "spyglass-protocol";
-import { registerStorageWriteHandler } from "../commands.js";
+import { registerStorageClearHandler, registerStorageWriteHandler, StorageClearUnsupportedError } from "../commands.js";
 import { getCore } from "../core.js";
 import { parseMaybeJson } from "./shared.js";
 
@@ -14,6 +14,11 @@ interface MMKVLike {
   delete(key: string): void;
   /** Available since react-native-mmkv v2.5; used when present for real push notifications. */
   addOnValueChangedListener?(listener: (key: string) => void): { remove(): void };
+  /**
+   * The library's own bulk wipe (spec 0014). Used when present; otherwise
+   * the clear handler falls back to deleting every key from `getAllKeys()`.
+   */
+  clearAll?(): void;
 }
 
 export interface MmkvAdapterOptions {
@@ -90,11 +95,22 @@ export function attachMmkv(instance: MMKVLike, options: MmkvAdapterOptions = {})
     else instance.set(key, JSON.stringify(value));
   });
 
+  // Neither `clearAll()` nor a `delete()` loop reliably fires the change
+  // listener/patched methods above per key, so this always re-snapshots
+  // explicitly rather than counting on an echo (unlike the write handler).
+  const unregisterClear = registerStorageClearHandler("mmkv", options.dbName, (scope) => {
+    if (scope !== "all") throw new StorageClearUnsupportedError("MMKV has no tables — only scope: \"all\" is supported.");
+    if (instance.clearAll) instance.clearAll();
+    else for (const key of instance.getAllKeys()) instance.delete(key);
+    sendSnapshot();
+  });
+
   if (instance.addOnValueChangedListener) {
     const subscription = instance.addOnValueChangedListener(emitChange);
     return () => {
       subscription.remove();
       unregisterWrite();
+      unregisterClear();
     };
   }
 
@@ -112,5 +128,6 @@ export function attachMmkv(instance: MMKVLike, options: MmkvAdapterOptions = {})
     instance.set = originalSet;
     instance.delete = originalDelete;
     unregisterWrite();
+    unregisterClear();
   };
 }

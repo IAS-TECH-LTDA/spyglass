@@ -1,6 +1,6 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { KVEntry, StorageChangeKind, StorageChangePayload, StorageLocation, StorageSnapshotPayload } from "spyglass-protocol";
-import { registerStorageWriteHandler } from "../commands.js";
+import { registerStorageClearHandler, registerStorageWriteHandler, StorageClearUnsupportedError } from "../commands.js";
 import { getCore } from "../core.js";
 import { parseMaybeJson, serializeForKv } from "./shared.js";
 
@@ -126,6 +126,15 @@ export function attachAsyncStorage(
     else await AsyncStorage.setItem(key, serializeForKv(value));
   });
 
+  // Through the patched `AsyncStorage.clear` above (spec 0014), same
+  // "the echo comes for free" reasoning as the write handler — but only if
+  // the underlying module actually exposes `clear()` in the first place.
+  const unregisterClear = registerStorageClearHandler("asyncStorage", options.dbName, async (scope) => {
+    if (scope !== "all") throw new StorageClearUnsupportedError("AsyncStorage has no tables — only scope: \"all\" is supported.");
+    if (!original.clear) throw new StorageClearUnsupportedError("This AsyncStorage implementation has no clear().");
+    await AsyncStorage.clear!();
+  });
+
   return () => {
     AsyncStorage.setItem = original.setItem;
     AsyncStorage.removeItem = original.removeItem;
@@ -134,5 +143,6 @@ export function attachAsyncStorage(
     if (original.mergeItem) AsyncStorage.mergeItem = original.mergeItem;
     if (original.clear) AsyncStorage.clear = original.clear;
     unregisterWrite();
+    unregisterClear();
   };
 }

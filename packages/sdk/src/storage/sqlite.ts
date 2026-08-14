@@ -1,5 +1,6 @@
 import { createEnvelope, safeSerialize } from "spyglass-protocol";
 import type { StorageLocation, StorageSnapshotPayload, TableSchema } from "spyglass-protocol";
+import { registerStorageClearHandler, StorageClearUnsupportedError } from "../commands.js";
 import { getCore } from "../core.js";
 
 /**
@@ -16,6 +17,12 @@ import { getCore } from "../core.js";
  */
 export interface SqliteQueryRunner {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /**
+   * Optional write path (spec 0014) — the only thing `storage/clear` needs.
+   * Without it, this adapter is read-only and a clear request replies
+   * `errorCode: "unsupported-op"` instead of doing nothing silently.
+   */
+  exec?(sql: string, params?: unknown[]): Promise<void>;
 }
 
 export interface SqliteAdapterOptions {
@@ -99,10 +106,25 @@ export function attachSqlite(runner: SqliteQueryRunner, options: SqliteAdapterOp
   void snapshot();
   const timer = pollIntervalMs > 0 ? setInterval(() => void snapshot(), pollIntervalMs) : null;
 
+  const unregisterClear = registerStorageClearHandler("sqlite", dbName, async (scope, table) => {
+    if (!runner.exec) throw new StorageClearUnsupportedError("This SqliteQueryRunner has no exec() — read-only.");
+    if (scope === "table") {
+      if (!table) throw new StorageClearUnsupportedError('scope: "table" requires a table name.');
+      await runner.exec(`DELETE FROM ${quoteIdent(table)}`);
+    } else {
+      const tables = await runner.query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+      );
+      for (const { name } of tables) await runner.exec(`DELETE FROM ${quoteIdent(name)}`);
+    }
+    await snapshot();
+  });
+
   return {
     refresh: snapshot,
     stop() {
       if (timer) clearInterval(timer);
+      unregisterClear();
     },
   };
 }

@@ -738,6 +738,17 @@ th {
   font-family: "SF Mono", Menlo, monospace;
 }
 
+.schema-detail-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.schema-detail-panel-head h3 {
+  margin: 0;
+}
+
 .schema-rows-list {
   list-style: none;
   margin: 0;
@@ -2658,4 +2669,111 @@ button.jgn-row {
 
 .network-related-chip:hover {
   border-color: var(--accent);
+}
+
+/* Storage clear (spec 0014) + generic destructive confirmation modal */
+
+.storage-clear-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--red);
+  color: var(--red);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.storage-clear-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.storage-clear-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.confirm-clear-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, black 55%, transparent);
+}
+
+.confirm-clear-dialog {
+  width: min(420px, calc(100vw - 32px));
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confirm-clear-dialog h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--red);
+}
+
+.confirm-clear-dialog p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.confirm-clear-dialog code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: "SF Mono", Menlo, monospace;
+}
+
+.confirm-clear-input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 13px;
+}
+
+.confirm-clear-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.confirm-clear-cancel {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.confirm-clear-confirm {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--red);
+  background: var(--red);
+  color: #1a1a1a;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.confirm-clear-confirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--red);
 }

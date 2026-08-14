@@ -187,6 +187,25 @@ export interface PendingWrite {
 }
 
 /**
+ * One in-flight (or just-resolved) `storage/clear` sent from the Storage
+ * view's "Clear" action (spec 0014), keyed by `requestId` in
+ * `AppData.pendingStorageClears`. Same shape/lifecycle as `PendingCacheClear`
+ * — no `"superseded"` status, since there's no organic event (like
+ * `storage/change`) to reconcile a clear against; it only ever resolves via
+ * its own `storage/clear-result` ack, the shared timeout, or disconnect.
+ */
+export interface PendingStorageClear {
+  requestId: string;
+  engine: StorageEngine;
+  dbName?: string;
+  scope: "all" | "table";
+  table?: string;
+  sentAt: number;
+  status: "pending" | "applied" | "failed";
+  error?: string;
+}
+
+/**
  * One in-flight (or just-resolved) `state/write` sent from the desktop's
  * `JsonGraph` editor to a connected app's Zustand store (spec 0007-state),
  * keyed by `requestId` in `AppData.pendingStateWrites`. Same shape/lifecycle
@@ -290,6 +309,8 @@ export interface AppData {
   pendingStateWrites: Record<string, PendingStateWrite>;
   /** In-flight/just-resolved `memory/clear-cache`s, keyed by `requestId` — see `PendingCacheClear`. */
   pendingCacheClears: Record<string, PendingCacheClear>;
+  /** In-flight/just-resolved `storage/clear`s, keyed by `requestId` — see `PendingStorageClear`. */
+  pendingStorageClears: Record<string, PendingStorageClear>;
   /** In-flight/just-resolved `query/write`s, keyed by `requestId` — see `PendingQueryWrite`. */
   pendingQueryWrites: Record<string, PendingQueryWrite>;
   /** In-flight/just-resolved `query/command`s, keyed by `requestId` — see `PendingQueryCommand`. */
@@ -386,6 +407,15 @@ interface ConnectionState {
    */
   sendClearCache(appId: string): void;
   /**
+   * Sends a Storage clear down to `appId`'s connected app (spec 0014) —
+   * either a whole engine (`scope: "all"`) or one relational table/
+   * collection (`scope: "table"`, with `table` set) — and tracks it in
+   * `AppData.pendingStorageClears` through to resolution, same
+   * never-optimistic contract as `sendStorageWrite`. Safe to call repeatedly;
+   * each call gets its own `requestId` and resolves independently.
+   */
+  sendStorageClear(appId: string, engine: StorageEngine, dbName: string | undefined, scope: "all" | "table", table?: string): void;
+  /**
    * Sends a whole-data write down to `appId`'s connected app for one React
    * Query cache entry (spec 0010) and tracks it in
    * `AppData.pendingQueryWrites` through to resolution — same
@@ -425,6 +455,7 @@ function emptyAppData(): AppData {
     pendingWrites: {},
     pendingStateWrites: {},
     pendingCacheClears: {},
+    pendingStorageClears: {},
     pendingQueryWrites: {},
     pendingQueryCommands: {},
     queriesMeta: {},
@@ -549,6 +580,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
               pendingWrites: failAllPending(appData.pendingWrites, t("connection.appDisconnected")),
               pendingStateWrites: failAllPending(appData.pendingStateWrites, t("connection.appDisconnected")),
               pendingCacheClears: failAllPending(appData.pendingCacheClears, t("connection.appDisconnected")),
+              pendingStorageClears: failAllPending(appData.pendingStorageClears, t("connection.appDisconnected")),
               pendingQueryWrites: failAllPending(appData.pendingQueryWrites, t("connection.appDisconnected")),
               pendingQueryCommands: failAllPending(appData.pendingQueryCommands, t("connection.appDisconnected")),
             },
@@ -620,6 +652,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     const prevPendingWrites = prevData?.pendingWrites ?? {};
     const prevPendingStateWrites = prevData?.pendingStateWrites ?? {};
     const prevPendingCacheClears = prevData?.pendingCacheClears ?? {};
+    const prevPendingStorageClears = prevData?.pendingStorageClears ?? {};
     const prevPendingQueryWrites = prevData?.pendingQueryWrites ?? {};
     const prevPendingQueryCommands = prevData?.pendingQueryCommands ?? {};
 
@@ -673,6 +706,19 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           if (!appData || !current || current.status !== "applied") return s;
           const { [requestId]: _cleared, ...rest } = appData.pendingCacheClears;
           return { data: { ...s.data, [appId]: { ...appData, pendingCacheClears: rest } } };
+        });
+      }, 1200);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    }
+
+    for (const requestId of newlyApplied(prevPendingStorageClears, nextData.pendingStorageClears)) {
+      const timer = setTimeout(() => {
+        set((s) => {
+          const appData = s.data[appId];
+          const current = appData?.pendingStorageClears[requestId];
+          if (!appData || !current || current.status !== "applied") return s;
+          const { [requestId]: _cleared, ...rest } = appData.pendingStorageClears;
+          return { data: { ...s.data, [appId]: { ...appData, pendingStorageClears: rest } } };
         });
       }, 1200);
       (timer as unknown as { unref?: () => void }).unref?.();
@@ -828,6 +874,48 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     // No value to reconstruct/guard here (unlike sendStorageWrite/
     // sendStateWrite) — memory/clear-cache carries only a requestId.
     const envelope = createEnvelope("memory/clear-cache", appId, { requestId });
+    sendToApp(envelope)
+      .then(() => {
+        const timer = setTimeout(
+          () => fail(t("connection.noResponse")),
+          STORAGE_WRITE_TIMEOUT_MS,
+        );
+        (timer as unknown as { unref?: () => void }).unref?.();
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
+  },
+
+  sendStorageClear(appId, engine, dbName, scope, table) {
+    const requestId = `sc_${Math.random().toString(36).slice(2, 10)}`;
+    const pending: PendingStorageClear = { requestId, engine, dbName, scope, table, sentAt: Date.now(), status: "pending" };
+
+    set((s) => {
+      const appData = s.data[appId] ?? emptyAppData();
+      return {
+        data: { ...s.data, [appId]: { ...appData, pendingStorageClears: { ...appData.pendingStorageClears, [requestId]: pending } } },
+      };
+    });
+
+    const fail = (error: string) => {
+      set((s) => {
+        const appData = s.data[appId];
+        const current = appData?.pendingStorageClears[requestId];
+        if (!appData || !current || current.status !== "pending") return s;
+        return {
+          data: {
+            ...s.data,
+            [appId]: {
+              ...appData,
+              pendingStorageClears: { ...appData.pendingStorageClears, [requestId]: { ...current, status: "failed", error } },
+            },
+          },
+        };
+      });
+    };
+
+    // No value to guard against truncation — storage/clear carries only a
+    // target descriptor, not data.
+    const envelope = createEnvelope("storage/clear", appId, { requestId, engine, dbName, scope, table });
     sendToApp(envelope)
       .then(() => {
         const timer = setTimeout(
@@ -1100,6 +1188,19 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
         ...appData,
         pendingCacheClears: {
           ...appData.pendingCacheClears,
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+        },
+      };
+    }
+
+    case "storage/clear-result": {
+      const p = envelope.payload;
+      const current = appData.pendingStorageClears[p.requestId];
+      if (!current) return appData; // unknown/stale requestId — ignore, not an error
+      return {
+        ...appData,
+        pendingStorageClears: {
+          ...appData.pendingStorageClears,
           [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
         },
       };
