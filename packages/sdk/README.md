@@ -1,5 +1,7 @@
 # spyglass-react
 
+![Spyglass](https://raw.githubusercontent.com/IAS-TECH-LTDA/spyglass/main/assets/banner.png)
+
 Instrumentation SDK for React Native, Expo and web apps. Streams navigation,
 state, storage, console and network events to the
 [Spyglass](https://github.com/IAS-TECH-LTDA/spyglass) desktop inspector.

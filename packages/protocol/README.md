@@ -1,5 +1,7 @@
 # spyglass-protocol
 
+![Spyglass](https://raw.githubusercontent.com/IAS-TECH-LTDA/spyglass/main/assets/banner.png)
+
 Shared message types and helpers for the [Spyglass](https://github.com/IAS-TECH-LTDA/spyglass)
 SDK↔Desktop WebSocket protocol.
 

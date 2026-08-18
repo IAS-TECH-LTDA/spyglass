@@ -1,5 +1,7 @@
 # Spyglass
 
+![Spyglass](./assets/banner.png)
+
 Spyglass is a visual, real-time inspector for React Native, Expo and
 ReactJS apps: navigation, state management, local storage, console logs and
 network requests, viewed live in a desktop app — similar in spirit to
