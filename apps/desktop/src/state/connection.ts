@@ -8,6 +8,7 @@ import type {
   NavTransitionPayload,
   QueryCommandKind,
   QueryInfo,
+  QueryWriteErrorCode,
   StateActionPayload,
   StorageEngine,
   StorageSnapshotPayload,
@@ -243,18 +244,26 @@ export interface PendingCacheClear {
 /**
  * One in-flight (or just-resolved) `query/write` sent from the desktop's
  * `JsonGraph` editor to a connected app's React Query cache (spec 0010),
- * keyed by `requestId` in `AppData.pendingQueryWrites`. Same shape/lifecycle
- * as `PendingStateWrite`, same reason for no `"superseded"` status: `query/
- * change` carries no `requestId` to correlate against, so this only ever
- * resolves via its own `query/write-result` ack, the shared timeout, or
- * disconnect.
+ * keyed by `requestId` in `AppData.pendingQueryWrites`.
+ *  - "pending"/"applied"/"failed" — as in `PendingWrite`.
+ *  - "superseded" — a `query/change` for the same `queryHash` reported data
+ *    that differs from what was written. Unlike storage's, this is
+ *    reconciled *even after* the write was already acked "applied": React
+ *    Query refetches on its own schedule (`refetchOnWindowFocus` fires the
+ *    moment the dev alt-tabs from Spyglass back to the app,
+ *    `refetchInterval`, a remount with `staleTime: 0`), so the honest
+ *    failure mode here isn't "the write never landed", it's "it landed and
+ *    was clobbered a second later" — indistinguishable from the app's
+ *    screen alone, which is exactly why the desktop has to say it.
  */
 export interface PendingQueryWrite {
   requestId: string;
   queryHash: string;
   data: unknown;
   sentAt: number;
-  status: "pending" | "applied" | "failed";
+  status: "pending" | "applied" | "failed" | "superseded";
+  /** @see QueryWriteErrorCode — kept so the view can localize known codes instead of only echoing `error` verbatim. */
+  errorCode?: QueryWriteErrorCode;
   error?: string;
 }
 
@@ -440,6 +449,18 @@ const MAX_NETWORK_ENTRIES = 300;
 const MAX_NAV_TRANSITIONS = 300;
 const MAX_PERF_SAMPLES = 300;
 const MAX_PERF_STALLS = 200;
+
+/**
+ * How long a *query* write stays in `pendingQueryWrites` after being
+ * confirmed applied — longer than the 1200ms visual-confirmation window
+ * every other write gets (see the sweep below), because the thing being
+ * watched for here happens later: React Query's `refetchOnWindowFocus` only
+ * fires once the dev leaves Spyglass and focuses the app, which is by
+ * definition after they stopped looking at the status dot. The entry
+ * outlives its own dot on purpose, so `query/change`'s reconciliation above
+ * still has something to mark `"superseded"` when that refetch lands.
+ */
+const QUERY_WRITE_WATCH_MS = 6000;
 
 function emptyAppData(): AppData {
   return {
@@ -733,7 +754,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
           const { [requestId]: _cleared, ...rest } = appData.pendingQueryWrites;
           return { data: { ...s.data, [appId]: { ...appData, pendingQueryWrites: rest } } };
         });
-      }, 1200);
+      }, QUERY_WRITE_WATCH_MS); // longer than the other sweeps — see QUERY_WRITE_WATCH_MS's doc comment
       (timer as unknown as { unref?: () => void }).unref?.();
     }
 
@@ -954,6 +975,15 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         };
       });
     };
+
+    // `data: undefined` doesn't survive `JSON.stringify` — the frame would
+    // arrive at the SDK with no `data` key at all, indistinguishable from a
+    // malformed one. Reject at the source, where the message is readable,
+    // instead of spending a round-trip to be told the payload was unusable.
+    if (data === undefined) {
+      fail(t("connection.undefinedValue"));
+      return;
+    }
 
     // See the matching guard in sendStorageWrite/sendStateWrite — same reasoning.
     if (containsTruncatedValue(data)) {
@@ -1214,7 +1244,7 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
         ...appData,
         pendingQueryWrites: {
           ...appData.pendingQueryWrites,
-          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", error: p.error },
+          [p.requestId]: { ...current, status: p.ok ? "applied" : "failed", errorCode: p.errorCode, error: p.error },
         },
       };
     }
@@ -1246,12 +1276,31 @@ function applyEnvelopeToAppData(appData: AppData, envelope: AnyEnvelope): AppDat
       // 0011, correlateNetworkEntry.ts) — kept even on "removed" (it's a
       // "when did this last change" history, not "does it exist now").
       const queriesMeta = { ...appData.queriesMeta, [p.queryHash]: { lastChangedAt: envelope.ts } };
+
+      // Reconcile any desktop-initiated write to this exact query against
+      // what the app itself reports — same "the app's own report is
+      // authoritative" rule `storage/change` follows above, with one
+      // deliberate difference: a query write is reconciled even after its
+      // own ack already marked it "applied" (see PendingQueryWrite's doc
+      // comment — the app can overwrite it moments later via its own
+      // refetch, and that's the failure mode this exists to catch).
+      let pendingQueryWrites = appData.pendingQueryWrites;
+      for (const [requestId, write] of Object.entries(pendingQueryWrites)) {
+        if (write.queryHash !== p.queryHash) continue;
+        if (write.status !== "pending" && write.status !== "applied") continue;
+        const matches = p.changeType !== "removed" && deepEqual(write.data, p.query?.data);
+        const nextStatus = matches ? "applied" : "superseded";
+        if (write.status === nextStatus) continue; // nothing to change; keep the reference stable
+        if (pendingQueryWrites === appData.pendingQueryWrites) pendingQueryWrites = { ...appData.pendingQueryWrites };
+        pendingQueryWrites[requestId] = { ...write, status: nextStatus };
+      }
+
       if (p.changeType === "removed") {
         const { [p.queryHash]: _removed, ...queries } = appData.queries;
-        return { ...appData, queries, queriesMeta };
+        return { ...appData, queries, queriesMeta, pendingQueryWrites };
       }
-      if (!p.query) return appData;
-      return { ...appData, queries: { ...appData.queries, [p.queryHash]: p.query }, queriesMeta };
+      if (!p.query) return { ...appData, queriesMeta, pendingQueryWrites };
+      return { ...appData, queries: { ...appData.queries, [p.queryHash]: p.query }, queriesMeta, pendingQueryWrites };
     }
 
     case "log/entry": {

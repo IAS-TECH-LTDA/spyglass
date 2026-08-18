@@ -502,7 +502,26 @@ export type QueryWriteErrorCode =
   | "no-adapter"
   /** A handler is registered, but no query with this hash exists in its cache right now. */
   | "no-query"
-  /** `setQueryData` itself threw. */
+  /**
+   * The payload carried no `data` at all. `data: undefined` never survives
+   * the JSON wire (`JSON.stringify` drops the key), so it can't be told
+   * apart from a malformed frame — and React Query's own `setQueryData`
+   * treats `undefined` as "no-op, return", which would otherwise earn a
+   * false `ok: true`.
+   */
+  | "invalid-data"
+  /**
+   * The write ran without throwing, but the query's cached data never
+   * moved. The canonical cause: writing through `queryClient.setQueryData`
+   * re-derives the hash from the *client's* default options rather than the
+   * options this query was actually built with, so a query with its own
+   * `queryKeyHashFn` gets a brand-new, observer-less query built beside it
+   * instead of being written to — silently. Reported instead of a false
+   * `ok: true`, which used to leave the desktop claiming success while the
+   * app kept showing the old value.
+   */
+  | "not-applied"
+  /** `setQueryData`/`Query.setData` itself threw. */
   | "engine-error";
 
 export interface QueryWriteResultPayload {

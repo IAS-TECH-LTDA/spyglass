@@ -568,6 +568,126 @@ describe("pendingQueryWrites reconciliation (spec 0010)", () => {
     expect(entry.requestId).toMatch(/^qw_/);
     expect(entry.queryHash).toBe("hash-1");
   });
+
+  it("an undefined value is rejected before ever being sent — it wouldn't survive the wire", () => {
+    useConnectionStore.setState((s) => ({ apps: { ...s.apps, [APP_ID]: fakeAppInfo() }, data: { ...s.data, [APP_ID]: emptyAppDataFor(APP_ID) } }));
+
+    useConnectionStore.getState().sendQueryWrite(APP_ID, "hash-1", undefined);
+
+    const [entry] = Object.values(useConnectionStore.getState().data[APP_ID].pendingQueryWrites);
+    expect(entry.status).toBe("failed");
+    expect(entry.error).toMatch(/undefined/i);
+  });
+
+  it("query/write-result carries errorCode through onto the pending entry", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite());
+
+    const result = createEnvelope("query/write-result", APP_ID, {
+      requestId: "qwreq-1",
+      ok: false,
+      errorCode: "not-applied",
+      error: "left its cached data untouched",
+    });
+    useConnectionStore.getState().handleEnvelope(result);
+
+    const write = useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"];
+    expect(write.status).toBe("failed");
+    expect(write.errorCode).toBe("not-applied");
+    expect(write.error).toBe("left its cached data untouched");
+  });
+});
+
+describe("query/change reconciliation against pendingQueryWrites (spec 0010)", () => {
+  function queryChangeEnvelope(overrides: { data?: unknown; changeType?: "added" | "updated" | "removed" } = {}) {
+    const { data = { n: 5 }, changeType = "updated" } = overrides;
+    if (changeType === "removed") {
+      return createEnvelope("query/change", APP_ID, { changeType: "removed", queryHash: "hash-1" });
+    }
+    return createEnvelope("query/change", APP_ID, {
+      changeType,
+      queryHash: "hash-1",
+      query: {
+        queryHash: "hash-1",
+        queryKey: ["todos"],
+        status: "success",
+        fetchStatus: "idle",
+        data,
+        dataUpdatedAt: Date.now(),
+        errorUpdatedAt: 0,
+        isInvalidated: false,
+        observersCount: 0,
+      },
+    });
+  }
+
+  it("a query/change reporting the same data marks a pending write applied", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ data: { n: 5 } }));
+    useConnectionStore.getState().handleEnvelope(queryChangeEnvelope({ data: { n: 5 } }));
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"].status).toBe("applied");
+  });
+
+  it("a query/change reporting different data marks a pending write superseded", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ data: { n: 5 } }));
+    useConnectionStore.getState().handleEnvelope(queryChangeEnvelope({ data: { n: 999 } }));
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"].status).toBe("superseded");
+  });
+
+  it("an already-applied write is superseded when the app later reports different data (the refetch-overwrite case)", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ data: { n: 5 }, status: "applied" }));
+    useConnectionStore.getState().handleEnvelope(queryChangeEnvelope({ data: { n: 999 } }));
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"].status).toBe("superseded");
+  });
+
+  it("an already-applied write reporting matching data again stays applied (same reference, no needless re-render)", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ data: { n: 5 }, status: "applied" }));
+    const before = useConnectionStore.getState().data[APP_ID].pendingQueryWrites;
+    useConnectionStore.getState().handleEnvelope(queryChangeEnvelope({ data: { n: 5 } }));
+
+    const after = useConnectionStore.getState().data[APP_ID].pendingQueryWrites;
+    expect(after["qwreq-1"].status).toBe("applied");
+    expect(after).toBe(before); // reference preserved — nothing actually changed
+  });
+
+  it("a removed query/change supersedes a pending/applied write for that hash", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ status: "applied" }));
+    useConnectionStore.getState().handleEnvelope(queryChangeEnvelope({ changeType: "removed" }));
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"].status).toBe("superseded");
+  });
+
+  it("a query/change for a different queryHash leaves the pending write untouched", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ queryHash: "hash-1", data: { n: 5 } }));
+    const other = createEnvelope("query/change", APP_ID, {
+      changeType: "updated",
+      queryHash: "hash-2",
+      query: {
+        queryHash: "hash-2",
+        queryKey: ["other"],
+        status: "success",
+        fetchStatus: "idle",
+        data: { n: 999 },
+        dataUpdatedAt: Date.now(),
+        errorUpdatedAt: 0,
+        isInvalidated: false,
+        observersCount: 0,
+      },
+    });
+    useConnectionStore.getState().handleEnvelope(other);
+
+    expect(useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"].status).toBe("pending");
+  });
+
+  it("a query/change never resurrects an already-failed write", () => {
+    seedAppWithPendingQueryWrite(pendingQueryWrite({ data: { n: 5 }, status: "failed", error: "boom" }));
+    useConnectionStore.getState().handleEnvelope(queryChangeEnvelope({ data: { n: 5 } }));
+
+    const write = useConnectionStore.getState().data[APP_ID].pendingQueryWrites["qwreq-1"];
+    expect(write.status).toBe("failed");
+    expect(write.error).toBe("boom");
+  });
 });
 
 describe("pendingQueryCommands reconciliation (spec 0010)", () => {

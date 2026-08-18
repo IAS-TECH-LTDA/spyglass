@@ -136,6 +136,12 @@ export const pt = {
   "network.request": "Requisição",
   "network.response": "Resposta",
   "network.copyBody": "Copiar corpo de {title}",
+  "network.statusFilter.clientError": "4xx",
+  "network.statusFilter.serverError": "5xx",
+  "network.statusFilter.failed": "Falha",
+  "network.statusFilter.clientErrorTitle": "Erros do cliente (4xx)",
+  "network.statusFilter.serverErrorTitle": "Erros do servidor (5xx)",
+  "network.statusFilter.failedTitle": "Falhas de rede (sem resposta)",
 
   // ---------------------------------------------------------------------
   // queries (views/queries/QueriesView.tsx)
@@ -158,6 +164,9 @@ export const pt = {
   "queries.noDataYet": "Nenhum dado ainda.",
   "queries.error": "Erro",
   "queries.removeObserversTooltip": "Esta query tem {count} observador(es) ativo(s) — ela pode reaparecer imediatamente via refetch automático deles.",
+  "queries.writeFailed": "A escrita não chegou ao app.",
+  "queries.writeNotApplied": "O app aceitou a escrita, mas o cache dele não mudou — esta query pode estar registrada sob um hash diferente (um queryKeyHashFn customizado), ou o SDK do app é mais antigo que este desktop.",
+  "queries.writeOverwritten": "O app mudou esta query logo depois da sua edição — provavelmente um refetch (refetchOnWindowFocus, refetchInterval, ou uma remontagem com staleTime 0) sobrescreveu ela.",
 
   // ---------------------------------------------------------------------
   // storage (views/storage/StorageView.tsx)
@@ -317,4 +326,5 @@ export const pt = {
   "connection.appDisconnected": "App desconectado",
   "connection.truncatedValue": "Este valor contém dados que foram truncados para exibição (grande/profundo/circular demais) — gravá-lo de volta no app não é seguro.",
   "connection.noResponse": "Sem resposta do app (3s). Ele pode ter desconectado, ou as escritas estão desabilitadas nesta build (produção).",
+  "connection.undefinedValue": "Não há valor para escrever (undefined) — ele não sobreviveria à conexão com o app.",
 } as const satisfies Translations;

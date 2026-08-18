@@ -45,6 +45,31 @@ describe("envelope", () => {
     expect(decodeEnvelope(encodeEnvelope(result))).toEqual(result);
   });
 
+  it("round-trips a query/write-result with the not-applied and invalid-data error codes", () => {
+    const notApplied = createEnvelope("query/write-result", "app-1", {
+      requestId: "req-1",
+      ok: false,
+      errorCode: "not-applied",
+      error: "left its cached data untouched",
+    });
+    expect(decodeEnvelope(encodeEnvelope(notApplied))).toEqual(notApplied);
+
+    const invalidData = createEnvelope("query/write-result", "app-1", {
+      requestId: "req-2",
+      ok: false,
+      errorCode: "invalid-data",
+      error: "query/write carried no `data`.",
+    });
+    expect(decodeEnvelope(encodeEnvelope(invalidData))).toEqual(invalidData);
+  });
+
+  it("a query/write with data: undefined drops the `data` key entirely on the wire — it never survives JSON", () => {
+    const write = createEnvelope("query/write", "app-1", { requestId: "req-1", queryHash: "hash-1", data: undefined });
+    const decoded = decodeEnvelope(encodeEnvelope(write));
+    expect(decoded).not.toBeNull();
+    expect("data" in decoded!.payload).toBe(false);
+  });
+
   it("round-trips a storage/snapshot carrying a StorageLocation (spec 0013)", () => {
     const exact = createEnvelope("storage/snapshot", "app-1", {
       engine: "sqlite",

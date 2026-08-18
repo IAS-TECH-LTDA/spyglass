@@ -151,6 +151,34 @@ describe("inbound query/write dispatch (spec 0010)", () => {
     }
   });
 
+  it("replies invalid-data when the frame carries no `data` key at all, without invoking the handler", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const { init } = await import("../index.js");
+    const { registerQueryWriteHandler } = await import("../commands.js");
+
+    const received: unknown[] = [];
+    registerQueryWriteHandler((queryHash, data) => {
+      received.push([queryHash, data]);
+    });
+
+    const handle = init({ appName: "Test", host: "localhost", diagnostics: false, autoAttach: false });
+    try {
+      const socket = FakeSocket.instances[0];
+      socket.open();
+
+      // `data: undefined` never survives `JSON.stringify` — this is what
+      // actually reaches the wire when a desktop write carries no value.
+      const write = createEnvelope("query/write", handle.appId, { requestId: "req-invalid", queryHash: "hash-1" } as never);
+      socket.onmessage?.({ data: JSON.stringify(write) });
+
+      const result = await waitForFrame(socket, "query/write-result");
+      expect(result.payload).toMatchObject({ requestId: "req-invalid", ok: false, errorCode: "invalid-data" });
+      expect(received).toHaveLength(0);
+    } finally {
+      handle.close();
+    }
+  });
+
   it("ignores a write addressed to a different appId", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const { init } = await import("../index.js");
@@ -509,6 +537,10 @@ describe("attachReactQuery write-through", () => {
       getQueryCache: () => ({ getAll: () => [query], subscribe: () => () => {} }),
       setQueryData: (queryKey: readonly unknown[], data: unknown) => {
         setQueryDataCalls.push([queryKey, data]);
+        // Mutate the found query in place, same as the real query-core
+        // would — the write handler re-reads by hash afterward to confirm
+        // something actually moved (see reactQuery.ts's `not-applied` check).
+        query.state = { ...query.state, data, dataUpdatedAt: query.state.dataUpdatedAt + 1 };
         return data;
       },
       invalidateQueries: async () => {},
@@ -551,6 +583,7 @@ describe("attachReactQuery write-through", () => {
       getQueryCache: () => ({ getAll: () => [queryA], subscribe: () => () => {} }),
       setQueryData: (_k: readonly unknown[], data: unknown) => {
         callsA.push(data);
+        queryA.state = { ...queryA.state, data, dataUpdatedAt: queryA.state.dataUpdatedAt + 1 };
       },
       invalidateQueries: async () => {},
       refetchQueries: async () => {},
@@ -561,6 +594,7 @@ describe("attachReactQuery write-through", () => {
       getQueryCache: () => ({ getAll: () => [queryB], subscribe: () => () => {} }),
       setQueryData: (_k: readonly unknown[], data: unknown) => {
         callsB.push(data);
+        queryB.state = { ...queryB.state, data, dataUpdatedAt: queryB.state.dataUpdatedAt + 1 };
       },
       invalidateQueries: async () => {},
       refetchQueries: async () => {},
@@ -583,5 +617,152 @@ describe("attachReactQuery write-through", () => {
     expect(callsB).toEqual(["still-works"]);
 
     detachB();
+  });
+
+  it("prefers Query.setData over queryClient.setQueryData when the query instance offers one, passing { manual: true }", async () => {
+    const { setCore } = await import("../core.js");
+    const { attachReactQuery } = await import("../query/reactQuery.js");
+    const { enableInboundCommands } = await import("../commands.js");
+
+    const { core, sent, dispatch } = setupCore("app-1");
+    setCore(core);
+    enableInboundCommands(core);
+
+    const query = fakeQuery("hash-1", ["todos"]);
+    const setDataCalls: Array<[unknown, unknown]> = [];
+    (query as unknown as { setData: (data: unknown, options?: unknown) => void }).setData = (data, options) => {
+      setDataCalls.push([data, options]);
+      query.state = { ...query.state, data, dataUpdatedAt: query.state.dataUpdatedAt + 1 };
+    };
+
+    let setQueryDataCalled = false;
+    const client = {
+      getQueryCache: () => ({ getAll: () => [query], subscribe: () => () => {} }),
+      setQueryData: () => {
+        setQueryDataCalled = true;
+      },
+      invalidateQueries: async () => {},
+      refetchQueries: async () => {},
+      resetQueries: async () => {},
+      removeQueries: () => {},
+    };
+
+    attachReactQuery(client);
+    dispatch(createEnvelope("query/write", "app-1", { requestId: "req-1", queryHash: "hash-1", data: { n: 9 } }));
+
+    await vi.waitFor(() => {
+      if (!sent.some((e) => e.type === "query/write-result")) throw new Error("no result yet");
+    });
+
+    expect(setDataCalls).toEqual([[{ n: 9 }, { manual: true }]]);
+    expect(setQueryDataCalled).toBe(false);
+    const result = sent.find((e) => e.type === "query/write-result")!;
+    expect(result.payload).toMatchObject({ requestId: "req-1", ok: true });
+  });
+
+  it("replies not-applied when setQueryData re-derives a different hash and writes to another query instead (the root-cause repro)", async () => {
+    const { setCore } = await import("../core.js");
+    const { attachReactQuery } = await import("../query/reactQuery.js");
+    const { enableInboundCommands } = await import("../commands.js");
+
+    const { core, sent, dispatch } = setupCore("app-1");
+    setCore(core);
+    enableInboundCommands(core);
+
+    // Simulates a query with its own `queryKeyHashFn`: `setQueryData` (which
+    // re-derives the hash from the *client's* defaults) resolves to a
+    // brand-new query instead of the one found by `findByHash`, so the
+    // target query's own state never moves.
+    const target = fakeQuery("hash-1", ["todos"]);
+    const client = {
+      getQueryCache: () => ({ getAll: () => [target], subscribe: () => () => {} }),
+      setQueryData: () => {
+        /* writes into some other, unrelated query the real cache would have built */
+      },
+      invalidateQueries: async () => {},
+      refetchQueries: async () => {},
+      resetQueries: async () => {},
+      removeQueries: () => {},
+    };
+
+    attachReactQuery(client);
+    dispatch(createEnvelope("query/write", "app-1", { requestId: "req-1", queryHash: "hash-1", data: { n: 9 } }));
+
+    await vi.waitFor(() => {
+      if (!sent.some((e) => e.type === "query/write-result")) throw new Error("no result yet");
+    });
+
+    const result = sent.find((e) => e.type === "query/write-result")!;
+    expect(result.payload).toMatchObject({ requestId: "req-1", ok: false, errorCode: "not-applied" });
+  });
+
+  it("replies not-applied when the query leaves the cache mid-write", async () => {
+    const { setCore } = await import("../core.js");
+    const { attachReactQuery } = await import("../query/reactQuery.js");
+    const { enableInboundCommands } = await import("../commands.js");
+
+    const { core, sent, dispatch } = setupCore("app-1");
+    setCore(core);
+    enableInboundCommands(core);
+
+    const query = fakeQuery("hash-1", ["todos"]);
+    let gone = false;
+    const client = {
+      getQueryCache: () => ({ getAll: () => (gone ? [] : [query]), subscribe: () => () => {} }),
+      setQueryData: () => {
+        gone = true; // e.g. garbage-collected as a side effect of the write
+      },
+      invalidateQueries: async () => {},
+      refetchQueries: async () => {},
+      resetQueries: async () => {},
+      removeQueries: () => {},
+    };
+
+    attachReactQuery(client);
+    dispatch(createEnvelope("query/write", "app-1", { requestId: "req-1", queryHash: "hash-1", data: { n: 9 } }));
+
+    await vi.waitFor(() => {
+      if (!sent.some((e) => e.type === "query/write-result")) throw new Error("no result yet");
+    });
+
+    const result = sent.find((e) => e.type === "query/write-result")!;
+    expect(result.payload).toMatchObject({ requestId: "req-1", ok: false, errorCode: "not-applied" });
+  });
+
+  it("a deeply-equal write still reports ok as long as dataUpdatedAt moved (structural sharing false negative guard)", async () => {
+    const { setCore } = await import("../core.js");
+    const { attachReactQuery } = await import("../query/reactQuery.js");
+    const { enableInboundCommands } = await import("../commands.js");
+
+    const { core, sent, dispatch } = setupCore("app-1");
+    setCore(core);
+    enableInboundCommands(core);
+
+    const query = fakeQuery("hash-1", ["todos"]);
+    query.state = { ...query.state, data: { n: 9 } };
+    const client = {
+      getQueryCache: () => ({ getAll: () => [query], subscribe: () => () => {} }),
+      setQueryData: (_k: readonly unknown[], data: unknown) => {
+        // Real query-core's structural sharing (`replaceEqualDeep`) hands
+        // back the *previous* reference when the new value is deeply equal
+        // — only `dataUpdatedAt` moves.
+        query.state = { ...query.state, dataUpdatedAt: query.state.dataUpdatedAt + 1, data: query.state.data };
+        void data;
+      },
+      invalidateQueries: async () => {},
+      refetchQueries: async () => {},
+      resetQueries: async () => {},
+      removeQueries: () => {},
+    };
+
+    attachReactQuery(client);
+    dispatch(createEnvelope("query/write", "app-1", { requestId: "req-1", queryHash: "hash-1", data: { n: 9 } }));
+
+    await vi.waitFor(() => {
+      if (!sent.some((e) => e.type === "query/write-result")) throw new Error("no result yet");
+    });
+
+    const result = sent.find((e) => e.type === "query/write-result")!;
+    expect(result.payload).toMatchObject({ requestId: "req-1", ok: true });
   });
 });

@@ -114,6 +114,13 @@ export function registerStateWriteHandler(storeId: string, handler: StateWriteHa
 export class QueryNotFoundError extends Error {}
 
 /**
+ * Thrown by a `QueryWriteHandler` after a write that neither threw nor
+ * changed anything — reported as `errorCode: "not-applied"` instead of the
+ * `ok: true` that "it didn't throw" used to earn it. @see QueryWriteErrorCode
+ */
+export class QueryWriteNotAppliedError extends Error {}
+
+/**
  * Thrown by a `StorageClearHandler` to signal "this engine/scope combination
  * genuinely can't be cleared" (e.g. a `SqliteQueryRunner` with no `exec`, or
  * a `scope: "table"` request against an engine that only supports clearing
@@ -276,6 +283,15 @@ export function enableInboundCommands(core: SpyglassCore): () => void {
           replyQueryWrite(core, p.requestId, false, "no-adapter", "No attached React Query client.");
           return;
         }
+        // Rejected here, before the handler, for the same reason
+        // `storage/write` validates `op` here: it's a payload problem, not
+        // an engine problem. `data: undefined` can't be distinguished from a
+        // missing key (JSON drops it), and React Query would treat it as a
+        // silent no-op. @see QueryWriteErrorCode's "invalid-data".
+        if (p.data === undefined) {
+          replyQueryWrite(core, p.requestId, false, "invalid-data", "query/write carried no `data`.");
+          return;
+        }
         Promise.resolve()
           .then(() => queryWriteHandler!(p.queryHash, p.data))
           .then(
@@ -285,7 +301,11 @@ export function enableInboundCommands(core: SpyglassCore): () => void {
                 core,
                 p.requestId,
                 false,
-                err instanceof QueryNotFoundError ? "no-query" : "engine-error",
+                err instanceof QueryNotFoundError
+                  ? "no-query"
+                  : err instanceof QueryWriteNotAppliedError
+                    ? "not-applied"
+                    : "engine-error",
                 err instanceof Error ? err.message : String(err),
               ),
           );

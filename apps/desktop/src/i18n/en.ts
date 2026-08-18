@@ -149,6 +149,12 @@ export const en = {
   "network.request": "Request",
   "network.response": "Response",
   "network.copyBody": "Copy {title} body",
+  "network.statusFilter.clientError": "4xx",
+  "network.statusFilter.serverError": "5xx",
+  "network.statusFilter.failed": "Failed",
+  "network.statusFilter.clientErrorTitle": "Client errors (4xx)",
+  "network.statusFilter.serverErrorTitle": "Server errors (5xx)",
+  "network.statusFilter.failedTitle": "Network failures (no response)",
 
   // ---------------------------------------------------------------------
   // queries (views/queries/QueriesView.tsx)
@@ -171,6 +177,9 @@ export const en = {
   "queries.noDataYet": "No data yet.",
   "queries.error": "Error",
   "queries.removeObserversTooltip": "This query has {count} active observer(s) — it may reappear immediately via their automatic refetch.",
+  "queries.writeFailed": "The write didn't reach the app.",
+  "queries.writeNotApplied": "The app accepted the write but its cache didn't change — this query may be registered under a different hash (a custom queryKeyHashFn), or the app's SDK is older than this desktop.",
+  "queries.writeOverwritten": "The app changed this query right after your edit — a refetch (refetchOnWindowFocus, refetchInterval, or a remount with staleTime 0) most likely overwrote it.",
 
   // ---------------------------------------------------------------------
   // storage (views/storage/StorageView.tsx)
@@ -332,4 +341,5 @@ export const en = {
   "connection.appDisconnected": "App disconnected",
   "connection.truncatedValue": "This value contains data that was truncated for display (too large/deep/circular) — editing it back into the app isn't safe.",
   "connection.noResponse": "No response from the app (3s). It may have disconnected, or writes are disabled in this build (production).",
+  "connection.undefinedValue": "There's no value to write (undefined) — it wouldn't survive the connection to the app.",
 } as const;

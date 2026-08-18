@@ -88,11 +88,17 @@ function QueryDetail({ appId, query }: { appId: string; query: QueryInfo }) {
 
   // Most recently sent write to this query, if any — drives the status dot
   // on whichever field was last edited. Mirrors StoresView's StoreStatePanel.
+  // An "applied" write older than its own 1.2s confirmation window is
+  // skipped here even though it's still tracked in the store (see
+  // QUERY_WRITE_WATCH_MS's doc comment): the dot has already had its
+  // moment, and it sticks around only so a later `query/change` can still
+  // flip it to "superseded" if the app overwrites it.
   const latestWrite = useMemo(() => {
     if (!pendingQueryWrites) return undefined;
     let latest: PendingQueryWrite | undefined;
     for (const w of Object.values(pendingQueryWrites)) {
       if (w.queryHash !== query.queryHash) continue;
+      if (w.status === "applied" && Date.now() - w.sentAt > 1200) continue;
       if (!latest || w.sentAt > latest.sentAt) latest = w;
     }
     return latest;
@@ -158,6 +164,12 @@ function QueryDetail({ appId, query }: { appId: string; query: QueryInfo }) {
         ) : (
           <div className="view-empty">{t("queries.noDataYet")}</div>
         )}
+        {/* The status dot on the edited field is easy to miss and clears
+            itself — a write that silently did nothing is exactly the case
+            the dev can't diagnose from the app alone, so it also gets text. */}
+        {latestWrite && (latestWrite.status === "failed" || latestWrite.status === "superseded") && (
+          <p className="kv-raw-error">{writeMessage(t, latestWrite)}</p>
+        )}
       </div>
 
       {query.error !== undefined && (
@@ -211,8 +223,22 @@ function QueryActionsToolbar({ appId, queryHash, observersCount }: { appId: stri
         </button>
       ))}
       {latest?.status && <span className={`jgn-status-dot jgn-status-dot-${latest.status}`} title={latest.error ?? latest.status} />}
+      {latest?.status === "failed" && <span className="kv-raw-error">{latest.error ?? t("queries.writeFailed")}</span>}
     </div>
   );
+}
+
+/**
+ * The status dot's `title` used to be the only signal a failed/superseded
+ * write gave — invisible until hovered, on a dot that auto-clears. Real
+ * text here, keyed off `status`/`errorCode` rather than only echoing
+ * `error` verbatim, so the two most confusing cases (hash mismatch, app
+ * refetch clobbering the write) get an explanation instead of a raw string.
+ */
+function writeMessage(t: (key: TranslationKey) => string, w: PendingQueryWrite): string {
+  if (w.status === "superseded") return t("queries.writeOverwritten");
+  if (w.errorCode === "not-applied") return t("queries.writeNotApplied");
+  return w.error ?? t("queries.writeFailed");
 }
 
 function statusClass(q: QueryInfo): string {

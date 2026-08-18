@@ -6,12 +6,20 @@ import { JsonGraph } from "../../components/jsonGraph/JsonGraph";
 import { toCurl } from "../../lib/curl";
 import { correlateNetworkEntry } from "../../lib/correlateNetworkEntry";
 import { useResizableWidth } from "../../lib/useResizableWidth";
+import { statusBucket, statusClass, statusLabel, type StatusBucket } from "../../lib/networkStatus";
 import { useT } from "../../i18n";
 import { Trans } from "../../i18n/Trans";
 import { currentBcp47 } from "../../state/locale";
 
 /** Preferred display order for the most common verbs; anything else is appended alphabetically. */
 const METHOD_ORDER = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+/** Fixed, always-shown — unlike method chips, which are derived from the data on screen, an error filter needs to be armable before any error exists. */
+const STATUS_FILTERS: Array<{ bucket: Extract<StatusBucket, "client" | "server" | "failed">; labelKey: "network.statusFilter.clientError" | "network.statusFilter.serverError" | "network.statusFilter.failed"; titleKey: "network.statusFilter.clientErrorTitle" | "network.statusFilter.serverErrorTitle" | "network.statusFilter.failedTitle" }> = [
+  { bucket: "client", labelKey: "network.statusFilter.clientError", titleKey: "network.statusFilter.clientErrorTitle" },
+  { bucket: "server", labelKey: "network.statusFilter.serverError", titleKey: "network.statusFilter.serverErrorTitle" },
+  { bucket: "failed", labelKey: "network.statusFilter.failed", titleKey: "network.statusFilter.failedTitle" },
+];
 
 export function NetworkView({ appId }: { appId: string }) {
   const { t, tp } = useT();
@@ -20,6 +28,7 @@ export function NetworkView({ appId }: { appId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [methodFilter, setMethodFilter] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<Set<StatusBucket>>(new Set());
   const {
     width: sidebarWidth,
     resizing,
@@ -54,14 +63,24 @@ export function NetworkView({ appId }: { appId: string }) {
     });
   };
 
+  const toggleStatus = (bucket: StatusBucket) => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(bucket)) next.delete(bucket);
+      else next.add(bucket);
+      return next;
+    });
+  };
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return requests.filter((r) => {
+      if (statusFilter.size > 0 && !statusFilter.has(statusBucket(r))) return false;
       if (methodFilter.size > 0 && !methodFilter.has(r.method.toUpperCase())) return false;
       if (!q) return true;
       return r.url.toLowerCase().includes(q) || r.method.toLowerCase().startsWith(q) || String(r.status ?? "").startsWith(q);
     });
-  }, [requests, query, methodFilter]);
+  }, [requests, query, methodFilter, statusFilter]);
 
   const selected = filtered.find((r) => r.requestId === selectedId) ?? filtered[0];
 
@@ -85,19 +104,33 @@ export function NetworkView({ appId }: { appId: string }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        {availableMethods.length > 0 && (
-          <nav className="engine-tabs network-method-filters">
-            {availableMethods.map((method) => (
+        <nav className="engine-tabs network-method-filters">
+          <div className="tabs-group">
+            {STATUS_FILTERS.map(({ bucket, labelKey, titleKey }) => (
               <button
-                key={method}
-                className={`tab method-${method.toLowerCase()} ${methodFilter.has(method) ? "active" : ""}`}
-                onClick={() => toggleMethod(method)}
+                key={bucket}
+                className={`tab status-filter-${bucket} ${statusFilter.has(bucket) ? "active" : ""}`}
+                title={t(titleKey)}
+                onClick={() => toggleStatus(bucket)}
               >
-                {method}
+                {t(labelKey)}
               </button>
             ))}
-          </nav>
-        )}
+          </div>
+          {availableMethods.length > 0 && (
+            <div className="tabs-group">
+              {availableMethods.map((method) => (
+                <button
+                  key={method}
+                  className={`tab method-${method.toLowerCase()} ${methodFilter.has(method) ? "active" : ""}`}
+                  onClick={() => toggleMethod(method)}
+                >
+                  {method}
+                </button>
+              ))}
+            </div>
+          )}
+        </nav>
         <div className="network-list-meta">
           <span className="network-count">{tp("network.requestCount", filtered.length)}</span>
           <button className="icon-btn network-clear" title={t("network.clearAllAria")} aria-label={t("network.clearAllAria")} onClick={handleClear}>
@@ -300,18 +333,6 @@ function HeadersTable({ headers }: { headers: Record<string, string> }) {
   );
 }
 
-function statusClass(entry: NetworkEntry): string {
-  if (entry.error) return "status-error";
-  if (entry.status === undefined) return "status-pending";
-  if (entry.ok) return "status-ok";
-  return "status-error";
-}
-
-function statusLabel(entry: NetworkEntry): string {
-  if (entry.error) return "ERR";
-  if (entry.status === undefined) return "…";
-  return String(entry.status);
-}
 
 /** HH:MM:SS the request started at — same clock-time shown in the list row and the detail panel's "Started" field. */
 function formatTime(ts: number): string {

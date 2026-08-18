@@ -50,10 +50,14 @@ temporariamente no app.
       (mesmo padrão de Storage/Stores) e aparecem 4 botões: Refetch,
       Invalidate, Reset, Remove.
 - [ ] **CA2** — Dado um edit no campo `Data`, Quando o desktop envia
-      `query/write`, Então o SDK acha a query pelo `queryHash`, chama
-      `queryClient.setQueryData(found.queryKey, data)` — nunca um
-      `queryKey` reconstruído do payload — e o desktop mostra
-      pending→applied/failed, nunca aplica o valor otimisticamente.
+      `query/write`, Então o SDK acha a query pelo `queryHash` e escreve na
+      própria instância `Query` resolvida (`found.setData(data, { manual: true
+      })`, com fallback para `queryClient.setQueryData(found.queryKey, data)`
+      quando a instância não expõe `setData`) — nunca um `queryKey`
+      reconstruído do payload —, relê a query pelo hash e só responde `ok`
+      se `dataUpdatedAt`/`data` de fato mudaram (ver "Riscos e dependências"
+      abaixo); o desktop mostra pending→applied/failed/superseded, nunca
+      aplica o valor otimisticamente.
 - [ ] **CA3** — Dado um clique em qualquer um dos 4 botões, Quando o
       comando chega no SDK, Então ele chama o método correspondente do
       `QueryClient` (`refetchQueries`/`invalidateQueries`/`resetQueries`/
@@ -73,6 +77,21 @@ temporariamente no app.
       (o próprio observer do React Query refaz o fetch) — comportamento
       esperado do React Query, sinalizado com um `title` de aviso no botão,
       não uma falha do canal.
+- [ ] **CA7** — Dado um `query/write` cujo cache não muda apesar da escrita
+      não ter lançado, Quando o SDK confirma via releitura que
+      `dataUpdatedAt`/`data` não avançaram, Então responde
+      `errorCode: "not-applied"` em vez de `ok: true` — e dado um `query/write`
+      sem a chave `data` (indistinguível de `undefined`, que não sobrevive ao
+      wire JSON), Então responde `errorCode: "invalid-data"` sem chamar o
+      handler. O desktop mostra o texto correspondente na aba Queries em vez
+      de só um ponto de status.
+- [ ] **CA8** — Dado um `query/write` já confirmado `applied`, Quando o app
+      reporta via `query/change` um `data` diferente do que foi escrito
+      (tipicamente um refetch próprio do React Query — `refetchOnWindowFocus`,
+      `refetchInterval`, remount com `staleTime: 0`), Então o desktop marca a
+      escrita como `"superseded"` e explica isso na aba Queries, em vez de
+      deixar o dev acreditando que a escrita "pegou" quando ela foi
+      sobrescrita segundos depois.
 
 ## Checklist de impacto
 
@@ -108,6 +127,25 @@ temporariamente no app.
   "Contexto e problema"); coberto por teste dedicado
   (`packages/sdk/src/__tests__/queryWrite.test.ts`, "setQueryData is called
   with the ORIGINAL... queryKey").
+- **`queryClient.setQueryData` re-deriva o hash, não o herda da query
+  encontrada** — descoberto depois do lançamento inicial: `setQueryData`
+  chama `defaultQueryOptions({ queryKey })` internamente e re-hasheia com as
+  opções *default do client*, não com as opções com que a query alvo foi de
+  fato construída. Uma query com `queryKeyHashFn` próprio hasheia diferente
+  e `queryCache.build()` cria silenciosamente uma Query nova (sem
+  observers) em vez de escrever na existente — nada lança, e o canal
+  respondia `ok: true` mesmo sem o app mudar. Corrigido escrevendo direto na
+  instância `Query` já resolvida por hash (`found.setData`, com
+  `setQueryData` só como fallback) e verificando por releitura que o cache
+  mudou antes de responder `ok` (`errorCode: "not-applied"` caso contrário)
+  — ver CA2/CA7 e os testes de regressão em `queryWrite.test.ts`
+  ("root-cause repro").
+- **Escrita sobrescrita por um refetch do próprio app** — não é um bug deste
+  canal, mas era invisível: o app pode refazer o fetch por conta própria
+  (`refetchOnWindowFocus` ao focar de volta o app depois do Spyglass,
+  `refetchInterval`, remount) segundos depois de um `ok: true`. O desktop
+  agora reconcilia `query/change` contra escritas já `"applied"` e marca
+  `"superseded"` quando o dado diverge — ver CA8.
 - **`attachReactQuery` chamado duas vezes (hot-reload)** — o detach da
   primeira chamada não pode arrancar os handlers da segunda; coberto por
   teste dedicado ("detach() unregisters both handlers...").
@@ -126,12 +164,21 @@ código do app.
   - `packages/sdk/src/__tests__/queryWrite.test.ts` — bateria completa de
     gate (routes/no-adapter/no-query/engine-error/appId errado/gates de
     produção) para `query/write` e `query/command` (todas as 4 variantes),
-    mais o teste de identidade referencial do `queryKey` e o de detach.
-  - `apps/desktop/src/state/__tests__/connection.test.ts` — reconciliação
-    de `pendingQueryWrites`/`pendingQueryCommands` (ack ok/erro, requestId
-    desconhecido, `markDisconnected`, guard de valor truncado).
+    mais o teste de identidade referencial do `queryKey`, o de detach, o
+    caminho via `Query.setData`, o repro da causa-raiz (hash re-derivado
+    escrevendo em outra query → `not-applied`), a query sumindo durante a
+    escrita, `invalid-data` para um frame sem `data`, e a guarda contra
+    falso-negativo por structural sharing.
+  - `apps/desktop/src/state/__tests__/connection.test.ts` — reconciliação de
+    `pendingQueryWrites`/`pendingQueryCommands` (ack ok/erro, requestId
+    desconhecido, `markDisconnected`, guard de valor truncado/`undefined`,
+    `errorCode` propagado) e a reconciliação de `query/change` contra
+    `pendingQueryWrites` (pending→applied/superseded, `applied`→`superseded`
+    pelo overwrite, hash diferente intocado, escrita já `failed` não
+    ressuscita).
   - `packages/protocol/src/__tests__/protocol.test.ts` — round-trip dos 4
-    `MessageType`s novos.
+    `MessageType`s novos, mais os `errorCode`s `not-applied`/`invalid-data` e
+    o comportamento de `data: undefined` no wire.
 - **Manual/ao vivo:**
   1. Conectar um app RN de teste com `attachReactQuery(queryClient)`, uma
      query cujo `queryKey` inclua um `Date` (para exercitar o ponto de

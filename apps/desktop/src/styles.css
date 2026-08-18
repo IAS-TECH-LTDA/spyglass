@@ -1125,6 +1125,19 @@ th {
   background: rgba(248, 113, 113, 0.12);
 }
 
+.status-filter-client.active {
+  color: #facc15;
+  border-color: #facc15;
+  background: rgba(250, 204, 21, 0.12);
+}
+
+.status-filter-server.active,
+.status-filter-failed.active {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(248, 113, 113, 0.12);
+}
+
 .network-list-meta {
   display: flex;
   align-items: center;
